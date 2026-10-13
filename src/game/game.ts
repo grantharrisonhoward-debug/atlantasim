@@ -114,7 +114,9 @@ export class Game {
 
   renderDpr() {
     const d = window.devicePixelRatio || 1;
-    return Math.min(d, this.settings.quality >= 2 ? 2 : 1);
+    // keep the backing store under ~9 MP so huge 4K/5K screens stay smooth
+    const cap = Math.sqrt(9e6 / Math.max(1, window.innerWidth * window.innerHeight));
+    return Math.max(1, Math.min(d, this.settings.quality >= 2 ? 2 : 1, cap));
   }
 
   private resize() {
@@ -127,7 +129,7 @@ export class Game {
     this.mm.height = Math.round(mw * dpr);
     this.cache?.setPxScale(dpr);
     // keep enough tiles for a full screen at two zoom levels (+ minimap)
-    if (this.cache) this.cache.maxTiles = Math.max(140, Math.ceil((w * dpr * h * dpr) / (512 * 512)) * 5 + 60);
+    if (this.cache) this.cache.maxTiles = Math.min(340, Math.max(140, Math.ceil((w * dpr * h * dpr) / (512 * 512)) * 5 + 60));
   }
 
   mainView(): View {
@@ -420,9 +422,29 @@ export class Game {
       ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
       drawPuck(ctx, carS[0], carS[1], car.heading + v.rot);
     }
+    this.drawVignette(ctx);
     this.renderMinimap();
     this.cache.pump();
     this.updateHud(rdt);
+  }
+
+  private vignette: HTMLCanvasElement | null = null;
+  /** soft warm ambient vignette — pre-rendered once per canvas size */
+  private drawVignette(ctx: CanvasRenderingContext2D) {
+    const W = this.canvas.width, H = this.canvas.height;
+    if (!this.vignette || this.vignette.width !== W || this.vignette.height !== H) {
+      const c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const g = c.getContext('2d')!;
+      const grad = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.hypot(W, H) * 0.62);
+      grad.addColorStop(0, 'rgba(90,70,50,0)');
+      grad.addColorStop(1, 'rgba(90,70,50,0.13)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, W, H);
+      this.vignette = c;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(this.vignette, 0, 0);
   }
 
   private toScreen(v: View, x: number, y: number): [number, number] {

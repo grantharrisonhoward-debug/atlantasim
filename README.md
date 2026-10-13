@@ -2,7 +2,13 @@
 
 Drive a little car through every mapped street inside I-285: down Peachtree, onto the Downtown Connector, out to Decatur, up GA-400 to Buckhead. The whole world is built from real OpenStreetMap geometry, including streets, ramps, bridges, one-ways, buildings, parks, lakes, and rail. There are no mocked or fictional streets.
 
-![Midtown at Peachtree & 10th](docs/midtown.png)
+![Downtown Atlanta — Five Points, the State Capitol and the Connector](docs/downtown.png)
+
+| | |
+|---|---|
+| ![Midtown](docs/midtown.png) Midtown, close-up | ![Overview](docs/overview.png) Midtown → Old Fourth Ward → Decatur |
+| ![Full map](docs/full-map.png) Full map, clipped to I-285 | ![Route](docs/route.png) Search + route to Ponce City Market |
+| ![Connector](docs/connector-car-up.png) Downtown Connector, car-up camera | |
 
 ## Quick start
 
@@ -33,6 +39,7 @@ npm run data:build   # projects, clips to I-285, chunks, builds labels/search/ro
 | R | Reset car onto the nearest road, facing legal traffic direction |
 | M | Full-screen map (search, destinations, routing) |
 | C | Toggle north-up / car-up camera |
+| F3 or ` | Debug overlay (fps, tile stats, road under car) |
 | Esc | Pause and settings |
 
 A gamepad also works: left stick to steer, RT/LT for throttle/brake, A/B for the handbrake.
