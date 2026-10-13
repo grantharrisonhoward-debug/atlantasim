@@ -5,6 +5,8 @@ import { TileCache, type View } from '../render/tileCache';
 import { LabelLayer, abbreviate } from '../render/labels';
 import { drawCar, drawPin, drawPuck, drawRoute, drawOverpasses, Skids, Smoke, CAR_COLORS } from '../render/carDraw';
 import { Car, type SurfaceParams } from './car';
+import { VEHICLES, vehicleById } from './vehicles';
+import { THEMES } from '../render/style';
 import { Camera } from './camera';
 import { Input } from './input';
 import { WorldQuery, neighborhoodAt, type RoadHit, type Hood, type HoodArea } from './worldQuery';
@@ -77,6 +79,7 @@ export class Game {
     this.proj = new Projection(m.projection.lat0, m.projection.lon0);
     this.region = new Float32Array((m as any).region ?? m.perimeter);
     this.cache = new TileCache(m, this.renderDpr());
+    this.applyTheme();
     this.wq = new WorldQuery(m);
     this.input = new Input(this.canvas);
     this.input.enabled = false; // until Play is pressed
@@ -85,6 +88,7 @@ export class Game {
     this.hoods = this.labels.global.hoods;
     this.hoodAreas = this.labels.global.hoodAreas;
     this.car.scale = this.settings.carScale;
+    this.car.setHandling(vehicleById(this.settings.vehicle).h);
     this.cam.mode = this.settings.cameraMode;
     this.car.place(m.spawn.x, m.spawn.y, m.spawn.heading);
     this.cam.snapTo(this.car);
@@ -213,17 +217,15 @@ export class Game {
     // segmented settings
     document.querySelectorAll<HTMLElement>('.seg').forEach((seg) => {
       const key = seg.dataset.key as keyof Settings;
-      const sync = () => seg.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.classList.toggle('on', String(this.settings[key]) === b.dataset.v));
       seg.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
         b.onclick = () => {
           const v = b.dataset.v!;
-          (this.settings as any)[key] = key === 'cameraMode' ? v : Number(v);
+          (this.settings as any)[key] = typeof this.settings[key] === 'string' ? v : Number(v);
           this.applySettings();
-          sync();
         };
       });
-      sync();
     });
+    this.syncUi();
     const sw = document.getElementById('swatches')!;
     for (const [k, c] of Object.entries(CAR_COLORS)) {
       const d = document.createElement('div');
@@ -235,6 +237,7 @@ export class Game {
         sw.querySelectorAll('.swatch').forEach((s) => s.classList.remove('on'));
         d.classList.add('on');
         saveSettings(this.settings);
+        this.syncUi();
       };
       sw.appendChild(d);
     }
@@ -248,8 +251,77 @@ export class Game {
     const s = this.settings;
     this.cam.mode = s.cameraMode;
     this.car.scale = s.carScale;
+    this.car.setHandling(vehicleById(s.vehicle).h);
+    this.applyTheme();
     saveSettings(s);
     this.resize();
+    this.syncUi();
+  }
+
+  private applyTheme() {
+    const th = THEMES[this.settings.mapStyle] ?? THEMES.map;
+    this.cache.setTheme(th.id);
+    this.labels.theme = th;
+    document.documentElement.dataset.mapStyle = th.id;
+  }
+
+  /** reflect settings in every segmented control and vehicle picker */
+  private syncUi() {
+    document.querySelectorAll<HTMLElement>('.seg').forEach((seg) => {
+      const key = seg.dataset.key as keyof Settings;
+      seg.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.classList.toggle('on', String(this.settings[key]) === b.dataset.v));
+    });
+    for (const id of ['menu-vehicles', 'title-vehicles']) this.renderVehicles(document.getElementById(id));
+  }
+
+  private renderVehicles(el: HTMLElement | null) {
+    if (!el) return;
+    if (!el.dataset.built) {
+      el.dataset.built = '1';
+      for (const v of VEHICLES) {
+        const b = document.createElement('button');
+        b.className = 'vcard';
+        b.dataset.id = v.id;
+        b.title = v.blurb;
+        const bar = (label: string, n: number) => `<div class="vstat"><span>${label}</span><div class="vbar"><i style="width:${n * 20}%"></i></div></div>`;
+        b.innerHTML = `<canvas width="240" height="68"></canvas><div class="vn">${v.name}</div>${bar('Speed', v.stats.speed)}${bar('Accel', v.stats.accel)}${bar('Control', v.stats.control)}`;
+        b.onclick = () => { this.settings.vehicle = v.id; this.applySettings(); };
+        el.appendChild(b);
+      }
+      const blurb = document.createElement('div');
+      blurb.className = 'vblurb';
+      el.after(blurb);
+    }
+    el.querySelectorAll<HTMLButtonElement>('.vcard').forEach((b) => {
+      b.classList.toggle('on', b.dataset.id === this.settings.vehicle);
+      const cv = b.querySelector('canvas')!;
+      const g = cv.getContext('2d')!;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, cv.width, cv.height);
+      const v = vehicleById(b.dataset.id!);
+      const c = new Car(v.h);
+      c.scale = 1;
+      c.place(0, 0, 0);
+      const k = Math.min(200 / 7.4, 52 / 2.6); // same scale for all, so sizes compare
+      g.setTransform(k, 0, 0, k, cv.width / 2, cv.height / 2);
+      drawCar(g, c, this.settings.color, 0, k, v.body);
+    });
+    const blurb = el.nextElementSibling as HTMLElement | null;
+    if (blurb?.classList.contains('vblurb')) blurb.textContent = vehicleById(this.settings.vehicle).blurb;
+  }
+
+  private cycleVehicle() {
+    const i = VEHICLES.findIndex((v) => v.id === this.settings.vehicle);
+    const v = VEHICLES[(i + 1) % VEHICLES.length];
+    this.settings.vehicle = v.id;
+    this.applySettings();
+    this.hud.toast(`${v.name} — ${v.blurb}`, 2.2);
+  }
+
+  private toggleStyle() {
+    this.settings.mapStyle = this.settings.mapStyle === 'map' ? 'real' : 'map';
+    this.applySettings();
+    this.hud.toast(this.settings.mapStyle === 'real' ? 'Map style: realistic' : 'Map style: cartographic', 1.4);
   }
 
   private toggleCamera() {
@@ -311,6 +383,8 @@ export class Game {
     if (this.map.open) return;
     if (inp.hit('r')) this.resetCar();
     if (inp.hit('c')) this.toggleCamera();
+    if (inp.hit('v')) this.cycleVehicle();
+    if (inp.hit('t')) this.toggleStyle();
     if (inp.hit('F3') || inp.hit('`')) {
       this.debug = !this.debug;
       document.getElementById('debug')!.classList.toggle('hidden', !this.debug);
@@ -400,7 +474,7 @@ export class Game {
     const v = this.mainView();
     const car = this.car;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#F1EDE4';
+    ctx.fillStyle = this.labels.theme.land;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     this.cache.beginFrame();
     this.cache.draw(ctx, v, 0);
@@ -425,9 +499,9 @@ export class Game {
     if (pxLen >= 11) {
       TileCache.applyView(ctx, v);
       this.smoke.draw(ctx);
-      drawCar(ctx, car, this.settings.color, v.rot, v.scale);
+      drawCar(ctx, car, this.settings.color, v.rot, v.scale, vehicleById(this.settings.vehicle).body);
       const lvl = Math.max(0, this.road && this.road.dist < this.road.halfWidth + 4 ? this.road.level : 0);
-      drawOverpasses(ctx, this.wq.linesAbove(car.x, car.y, car.length + 6, lvl), v.scale);
+      drawOverpasses(ctx, this.wq.linesAbove(car.x, car.y, car.length + 6, lvl), v.scale, this.labels.theme);
     } else {
       ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
       drawPuck(ctx, carS[0], carS[1], car.heading + v.rot);
@@ -472,7 +546,7 @@ export class Game {
       w: size, h: size, dpr,
     };
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#EDE8DE';
+    ctx.fillStyle = this.labels.theme.land;
     ctx.fillRect(0, 0, this.mm.width, this.mm.height);
     this.cache.draw(ctx, v, 8, false);
     TileCache.applyView(ctx, v);

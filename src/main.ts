@@ -25,6 +25,7 @@ async function boot() {
     const keys = document.getElementById('play-keys')!;
     btn.hidden = false;
     keys.hidden = false;
+    document.getElementById('title-options')!.hidden = false;
     btn.focus();
     await new Promise<void>((resolve) => {
       btn.addEventListener('click', () => resolve(), { once: true });

@@ -4,6 +4,7 @@
 
 import { BASE } from '../world/manifest';
 import type { View } from './tileCache';
+import { THEME_MAP, type Theme } from './style';
 
 export const FONT = '"Inter Variable", Inter, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
@@ -74,6 +75,7 @@ export class LabelLayer {
   private col = new Collider();
   /** names the player is following on the route — drawn with emphasis */
   emphasize: Set<string> = new Set();
+  theme: Theme = THEME_MAP;
 
   async load(labelChunks: [number, number][], chunkSize: number) {
     const r = await fetch(`${BASE}world/labels/global.json`);
@@ -161,7 +163,7 @@ export class LabelLayer {
         if (!this.col.test(box)) continue;
         this.col.add(box);
         ctx.globalAlpha = a * (opts.map ? 1 : 0.92);
-        drawTracked(ctx, text, p[0], p[1], font, track, big ? '#6E6152' : '#857767', 'rgba(250,247,240,0.92)', 3.2, this, w);
+        drawTracked(ctx, text, p[0], p[1], font, track, big ? this.theme.labels.hoodBig : this.theme.labels.hood, this.theme.labels.hoodHalo, 3.2, this, w);
       }
       ctx.globalAlpha = 1;
     };
@@ -189,7 +191,7 @@ export class LabelLayer {
         ctx.fill();
         ctx.font = font;
         ctx.textAlign = 'left';
-        halo(ctx, l.n, p[0] + 8, p[1], color, 'rgba(255,255,255,0.92)', 3);
+        halo(ctx, l.n, p[0] + 8, p[1], this.theme.id === 'real' ? '#FFFFFF' : color, this.theme.id === 'real' ? 'rgba(20,20,20,0.75)' : 'rgba(255,255,255,0.92)', 3);
         ctx.textAlign = 'center';
       }
     };
@@ -208,7 +210,8 @@ export class LabelLayer {
         if (!this.col.test(box)) continue;
         this.col.add(box);
         ctx.font = font;
-        halo(ctx, a.n, p[0], p[1], water ? '#3F7698' : '#4B7A41', water ? 'rgba(220,238,246,0.85)' : 'rgba(240,247,232,0.85)', 3);
+        const L = this.theme.labels;
+        halo(ctx, a.n, p[0], p[1], water ? L.water : L.park, water ? L.waterHalo : L.parkHalo, 3);
       }
     };
 
@@ -322,9 +325,10 @@ export class LabelLayer {
     for (const b of boxes) if (!this.col.test(b)) return false;
     // pad boxes a little so neighbouring labels breathe
     for (const b of boxes) this.col.add([b[0] - 6, b[1] - 3, b[2] + 6, b[3] + 3]);
-    const fill = emph ? '#2F5FD0' : major ? '#5A4E40' : '#665B4E';
+    const L = this.theme.labels;
+    const fill = emph ? (this.theme.id === 'real' ? '#BFD4FF' : '#2F5FD0') : major ? L.streetMajor : L.street;
     ctx.lineWidth = 3.2;
-    ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+    ctx.strokeStyle = L.halo;
     ctx.fillStyle = fill;
     for (const g of glyphs) {
       ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);

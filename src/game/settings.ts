@@ -7,10 +7,12 @@ export interface Settings {
   showCoords: number;
   quality: number;
   color: string;
+  vehicle: string;
+  mapStyle: 'map' | 'real';
 }
 
 const DEFAULTS: Settings = {
-  cameraMode: 'north', timeScale: 1.5, carScale: 1.8, lookAhead: 1, speedZoom: 1, showCoords: 1, quality: 2, color: 'peach',
+  cameraMode: 'north', timeScale: 1.5, carScale: 1.8, lookAhead: 1, speedZoom: 1, showCoords: 1, quality: 2, color: 'peach', vehicle: 'sedan', mapStyle: 'map',
 };
 
 const KEY = 'atlantasim.settings.v1';

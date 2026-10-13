@@ -74,6 +74,16 @@ export class TileCache {
     if (key) { this.inflight.delete(key); slot.busy = false; slot.job = null; }
   }
 
+  theme = 'map';
+  /** switch map style; cached tiles of the old style are dropped */
+  setTheme(t: string) {
+    if (t === this.theme) return;
+    this.theme = t;
+    for (const tile of this.tiles.values()) tile.bmp?.close();
+    this.tiles.clear();
+    this.wanted.clear();
+  }
+
   setPxScale(s: number) {
     if (s === this.pxScale) return;
     this.pxScale = s;
@@ -90,7 +100,8 @@ export class TileCache {
     slot.job = null;
     if (key) {
       this.inflight.delete(key);
-      const [z, tx, ty] = key.split('/').map(Number);
+      const [z, tx, ty] = key.split(':')[1].split('/').map(Number);
+      if (!key.startsWith(this.theme + ':')) { msg.bmp?.close(); this.evict(); this.pump(); return; }
       if (msg.bmp) this.tiles.set(key, { key, z, tx, ty, bmp: msg.bmp, used: this.frame });
     } else msg.bmp?.close();
     this.evict();
@@ -104,7 +115,7 @@ export class TileCache {
   }
 
   private want(z: number, tx: number, ty: number, pri: number) {
-    const key = `${z}/${tx}/${ty}`;
+    const key = `${this.theme}:${z}/${tx}/${ty}`;
     if (this.tiles.has(key) || this.inflight.has(key)) return;
     const w = this.wanted.get(key);
     if (!w || w.pri > pri) this.wanted.set(key, { z, tx, ty, pri });
@@ -129,7 +140,7 @@ export class TileCache {
       this.wanted.delete(key);
       slot.busy = true;
       slot.job = key;
-      const job: TileJob = { id, z: t.z, tx: t.tx, ty: t.ty, pxScale: this.pxScale };
+      const job: TileJob = { id, z: t.z, tx: t.tx, ty: t.ty, pxScale: this.pxScale, theme: this.theme };
       slot.w.postMessage({ type: 'render', job });
     }
   }
@@ -183,7 +194,7 @@ export class TileCache {
     let complete = true;
     for (let tx = tx0; tx <= tx1; tx++) {
       for (let ty = ty0; ty <= ty1; ty++) {
-        const key = `${z}/${tx}/${ty}`;
+        const key = `${this.theme}:${z}/${tx}/${ty}`;
         const t = this.tiles.get(key);
         if (t && t.bmp) { t.used = this.frame; exact.push(t); continue; }
         complete = false;
@@ -194,7 +205,7 @@ export class TileCache {
         for (let pz = z - 1; pz >= Math.max(ZMIN, z - 5); pz--) {
           const f = Math.pow(2, z - pz);
           const ptx = Math.floor(tx / f), pty = Math.floor(ty / f);
-          const pk = `${pz}/${ptx}/${pty}`;
+          const pk = `${this.theme}:${pz}/${ptx}/${pty}`;
           const pt = this.tiles.get(pk);
           if (pt && pt.bmp) {
             pt.used = this.frame;
@@ -205,7 +216,7 @@ export class TileCache {
         }
         if (!found && z < ZMAX) {
           for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) {
-            const ck = `${z + 1}/${tx * 2 + dx}/${ty * 2 + dy}`;
+            const ck = `${this.theme}:${z + 1}/${tx * 2 + dx}/${ty * 2 + dy}`;
             const ct = this.tiles.get(ck);
             if (ct && ct.bmp) { ct.used = this.frame; exact.unshift(ct); }
           }

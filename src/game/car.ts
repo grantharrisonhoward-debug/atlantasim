@@ -1,5 +1,5 @@
-// Arcade car physics: kinematic-bicycle yaw with grip-limited lateral
-// velocity, speed-dependent steering, handbrake drifting.
+// Arcade car physics: dynamic bicycle model (front/rear tyre slip with
+// saturating forces), speed-dependent steering, handbrake drifting.
 // All units are SI (metres, seconds, radians). y grows southward.
 
 export interface CarInput {
@@ -24,12 +24,20 @@ export interface Handling {
   maxSteer: number;     // rad at standstill
   steerFalloff: number; // speed (m/s) where max steer halves
   mu: number;           // tyre friction coefficient
+  mass: number;         // kg
+  frontGrip: number;    // multiplier on front tyre grip (lower → understeer)
+  rearGrip: number;     // multiplier on rear tyre grip (lower → oversteer / tail-happy)
+  handbrakeGrip: number;// rear grip left with the handbrake pulled
+  assist: number;       // stability assist strength (0 = none; higher = more forgiving)
+  steerRate: number;    // how fast the wheels turn (multiplier)
+  topMul: number;       // multiplier on each road's speed limit
 }
 
 export const DEFAULT_CAR: Handling = {
   length: 4.6, width: 1.95, wheelBase: 2.75,
   accel: 8.5, vmax: 62, brake: 12, reverseMax: 11,
   maxSteer: 0.62, steerFalloff: 15, mu: 1.15,
+  mass: 1450, frontGrip: 1, rearGrip: 1, handbrakeGrip: 0.36, assist: 4, steerRate: 1, topMul: 1,
 };
 
 const G = 9.81;
@@ -49,6 +57,9 @@ export class Car {
   private rearGrip = 1;
 
   constructor(h: Handling = DEFAULT_CAR) { this.h = h; }
+
+  /** swap vehicle in place, keeping position, heading and speed */
+  setHandling(h: Handling) { this.h = h; }
 
   get speed() { return Math.hypot(this.vx, this.vy); }
   get length() { return this.h.length * this.scale; }
@@ -74,17 +85,18 @@ export class Car {
     const gripLimit = (Lw * h.mu * G * surf.grip * 1.6) / Math.max(1, spd * spd);
     const maxSteer = Math.min(h.maxSteer / (1 + Math.pow(spd / h.steerFalloff, 1.25)), Math.max(0.02, gripLimit));
     const target = inp.steer * (inp.handbrake ? Math.min(h.maxSteer, maxSteer * 2.2) : maxSteer);
-    const rate = (Math.abs(target) < Math.abs(this.steerAngle) ? 7 : 4.2) * steerDt;
+    const rate = (Math.abs(target) < Math.abs(this.steerAngle) ? 7 : 4.2) * h.steerRate * steerDt;
     this.steerAngle += Math.max(-rate, Math.min(rate, target - this.steerAngle));
 
     // --- longitudinal
     let a = 0;
+    const top = surf.topSpeed * h.topMul;
     this.braking = false;
     this.reversing = false;
     if (inp.throttle > 0) {
       if (vLong < -0.4) { a += h.brake * inp.throttle; this.braking = true; }
       else {
-        const lim = Math.min(h.vmax, surf.topSpeed * 1.04);
+        const lim = Math.min(h.vmax, top * 1.04);
         const f = Math.max(0, 1 - Math.pow(Math.max(0, vLong) / lim, 2.2));
         a += h.accel * inp.throttle * f * Math.min(1, 0.55 + surf.grip * 0.45);
       }
@@ -96,7 +108,7 @@ export class Car {
     // resistances
     const sgn = Math.sign(vLong);
     a -= sgn * (0.28 + surf.drag + 0.00065 * vLong * vLong);
-    if (spd > surf.topSpeed) a -= sgn * (spd - surf.topSpeed) * 0.9; // soft limiter
+    if (spd > top) a -= sgn * (spd - top) * 0.9; // soft limiter
     if (inp.handbrake) a -= sgn * Math.min(spd / dt, 5.5);
     const nv = vLong + a * dt;
     // don't let resistance flip direction
@@ -108,7 +120,7 @@ export class Car {
     // saturating tyre forces). Handbrake cuts rear grip → oversteer / drift.
     const L = h.wheelBase * (0.5 + 0.5 * this.scale);
     const la = L * 0.46, lb = L * 0.54;            // CG → front / rear axle
-    const m = 1450, Iz = 0.21 * m * L * L;
+    const m = h.mass, Iz = 0.21 * m * L * L;
     const mu = h.mu * surf.grip;
     const Nf = (m * G * lb) / L, Nr = (m * G * la) / L;
     const hb = inp.handbrake && spd > 2;
@@ -116,9 +128,9 @@ export class Car {
     const longUse = Math.min(0.6, Math.abs(a) / (mu * G + 1e-6) * 0.5);
     // rear grip falls quickly when the handbrake is pulled and returns smoothly
     // (avoids a violent snap-back when it is released mid-slide)
-    const rgT = hb ? 0.36 : 1;
+    const rgT = hb ? h.handbrakeGrip : 1;
     this.rearGrip += (rgT - this.rearGrip) * (1 - Math.exp(-steerDt * (hb ? 14 : 2.6)));
-    const Ff = mu * Nf, Fr = mu * Nr * this.rearGrip * (1 - longUse * 0.5);
+    const Ff = mu * Nf * h.frontGrip, Fr = mu * Nr * h.rearGrip * this.rearGrip * (1 - longUse * 0.5);
     const Cf = 11 * Nf, Cr = 12.5 * Nr;
     let r = this.omega;
     const delta = this.steerAngle;
@@ -141,7 +153,7 @@ export class Car {
       if (!hb) {
         const beta = Math.atan2(vLat, uu);
         const ex = Math.abs(beta) - 0.3;
-        if (ex > 0) r += Math.sign(beta) * ex * 4 * dt;
+        if (ex > 0) r += Math.sign(beta) * ex * h.assist * dt;
       }
     }
     if (w < 1) {

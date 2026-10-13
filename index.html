@@ -55,7 +55,7 @@
       <pre id="debug" class="hidden"></pre>
       <div id="toast" class="hidden"></div>
       <div id="hint" class="glass">
-        <b>W A S D</b> drive · <b>Space</b> handbrake · <b>M</b> map · <b>R</b> reset · <b>C</b> camera · <b>Esc</b> menu
+        <b>W A S D</b> drive · <b>Space</b> handbrake · <b>M</b> map · <b>V</b> vehicle · <b>T</b> style · <b>Esc</b> menu
       </div>
     </div>
 
@@ -86,6 +86,8 @@
     <div id="menu" class="hidden">
       <div id="menu-panel" class="glass">
         <div id="menu-title">Paused</div>
+        <div class="row row-stack"><span>Vehicle <small>V</small></span><div class="vehicles" id="menu-vehicles"></div></div>
+        <div class="row"><span>Map style <small>T</small></span><div class="seg" data-key="mapStyle"><button data-v="map">Cartographic</button><button data-v="real">Realistic</button></div></div>
         <div class="row"><span>Camera</span><div class="seg" data-key="cameraMode"><button data-v="north">North up</button><button data-v="car">Car up</button></div></div>
         <div class="row"><span>Game speed</span><div class="seg" data-key="timeScale"><button data-v="1">Real-time</button><button data-v="1.5">Brisk 1.5×</button><button data-v="2">Arcade 2×</button></div></div>
         <div class="row"><span>Car size</span><div class="seg" data-key="carScale"><button data-v="1">True scale</button><button data-v="1.8">Miniature</button></div></div>
@@ -99,6 +101,7 @@
           <div><kbd>A</kbd><kbd>D</kbd> steer</div><div><kbd>Space</kbd> handbrake</div>
           <div><kbd>Wheel</kbd> zoom</div><div><kbd>M</kbd> full map</div>
           <div><kbd>R</kbd> reset car</div><div><kbd>C</kbd> camera mode</div>
+          <div><kbd>V</kbd> next vehicle</div><div><kbd>T</kbd> map style</div>
         </div>
         <button id="menu-resume" class="primary">Resume</button>
         <div id="menu-about"></div>
@@ -111,6 +114,10 @@
         <div id="loading-title">Atlanta</div>
         <div id="loading-sub">Inside the Perimeter</div>
         <div id="loading-status">Loading map…</div>
+        <div id="title-options" hidden>
+          <div class="vehicles" id="title-vehicles"></div>
+          <div class="seg" data-key="mapStyle"><button data-v="map">Cartographic map</button><button data-v="real">Realistic</button></div>
+        </div>
         <button id="play" class="primary" hidden>Play</button>
         <div id="play-keys" hidden><b>W A S D</b> or arrows to drive · <b>Space</b> handbrake · <b>M</b> map</div>
       </div>

@@ -1,11 +1,11 @@
 // Car sprite (vector), skid marks, tyre smoke and route overlay.
 
 import type { Car } from '../game/car';
+import type { BodyStyle } from '../game/vehicles';
 import type { Route } from '../nav/graph';
 import type { Chunk } from '../world/chunk';
 import { LF, LK } from '../world/codes';
-import { RAIL, ROAD, roadStyleKey } from './style';
-import { shade } from './tileDraw';
+import { THEME_MAP, roadStyleKey, type Theme } from './style';
 
 export const CAR_COLORS: Record<string, { body: string; dark: string; light: string }> = {
   peach: { body: '#E8775A', dark: '#B9533B', light: '#F6A68D' },
@@ -25,10 +25,29 @@ function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
   ctx.closePath();
 }
 
+interface BodySpec {
+  r: number;                 // corner radius (× width)
+  ws: [number, number];      // windshield front/back (× length, + = forward)
+  rw: [number, number];      // rear window front/back
+  roof: [number, number];    // roof back/front
+  wheels: [number, number];  // front/rear axle position
+  stripes?: boolean; scoop?: boolean; rack?: boolean; vents?: boolean; cargo?: boolean;
+}
+
+const BODIES: Record<BodyStyle, BodySpec> = {
+  sedan: { r: 0.34, ws: [0.27, 0.09], rw: [-0.24, -0.36], roof: [-0.24, 0.09], wheels: [0.31, -0.3] },
+  hatch: { r: 0.38, ws: [0.23, 0.06], rw: [-0.38, -0.45], roof: [-0.38, 0.06], wheels: [0.32, -0.32] },
+  sport: { r: 0.42, ws: [0.12, -0.03], rw: [-0.2, -0.31], roof: [-0.2, -0.03], wheels: [0.3, -0.3], vents: true },
+  muscle: { r: 0.2, ws: [0.16, 0.02], rw: [-0.17, -0.28], roof: [-0.17, 0.02], wheels: [0.31, -0.31], stripes: true, scoop: true },
+  suv: { r: 0.2, ws: [0.29, 0.17], rw: [-0.43, -0.48], roof: [-0.43, 0.17], wheels: [0.32, -0.32], rack: true },
+  truck: { r: 0.12, ws: [0.47, 0.39], rw: [0.24, 0.22], roof: [0.24, 0.39], wheels: [0.36, -0.3], cargo: true },
+};
+
 /** draw the car in world space (ctx already has the view transform) */
-export function drawCar(ctx: CanvasRenderingContext2D, car: Car, colorKey: string, viewRot: number, pxPerM: number) {
+export function drawCar(ctx: CanvasRenderingContext2D, car: Car, colorKey: string, viewRot: number, pxPerM: number, body: BodyStyle = 'sedan') {
   const L = car.length, W = car.width;
   const col = CAR_COLORS[colorKey] ?? CAR_COLORS.peach;
+  const B = BODIES[body];
   // soft ground shadow (sun from the north-west, fixed in world space)
   ctx.save();
   ctx.translate(car.x + L * 0.07, car.y + L * 0.11);
@@ -36,7 +55,7 @@ export function drawCar(ctx: CanvasRenderingContext2D, car: Car, colorKey: strin
   ctx.fillStyle = 'rgba(40,30,20,0.28)';
   ctx.shadowColor = 'rgba(40,30,20,0.35)';
   ctx.shadowBlur = Math.max(2, L * 0.12 * pxPerM);
-  rr(ctx, -L / 2, -W / 2, L, W, W * 0.35);
+  rr(ctx, -L / 2, -W / 2, L, W, W * B.r);
   ctx.fill();
   ctx.restore();
 
@@ -45,53 +64,87 @@ export function drawCar(ctx: CanvasRenderingContext2D, car: Car, colorKey: strin
   ctx.rotate(car.heading);
   // wheels
   ctx.fillStyle = '#26221E';
-  const wl = L * 0.17, ww = W * 0.17;
-  for (const fx of [L * 0.31, -L * 0.3]) for (const sy of [-1, 1]) {
+  const wl = L * (B.cargo ? 0.12 : 0.17), ww = W * 0.17;
+  const axles = B.cargo ? [L * B.wheels[0], L * B.wheels[1], L * (B.wheels[1] - 0.13)] : [L * B.wheels[0], L * B.wheels[1]];
+  for (const fx of axles) for (const sy of [-1, 1]) {
     ctx.save();
     ctx.translate(fx, sy * (W / 2 - ww * 0.35));
-    if (fx > 0) ctx.rotate(car.steerAngle);
+    if (fx === axles[0]) ctx.rotate(car.steerAngle);
     rr(ctx, -wl / 2, -ww / 2, wl, ww, ww * 0.3);
     ctx.fill();
     ctx.restore();
   }
-  // body
-  const g = ctx.createLinearGradient(0, -W / 2, 0, W / 2);
-  g.addColorStop(0, col.dark);
-  g.addColorStop(0.18, col.body);
-  g.addColorStop(0.5, col.light);
-  g.addColorStop(0.82, col.body);
-  g.addColorStop(1, col.dark);
-  ctx.fillStyle = g;
-  rr(ctx, -L / 2, -W / 2 + W * 0.04, L, W * 0.92, W * 0.34);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(40,25,15,0.35)';
-  ctx.lineWidth = Math.max(0.04, 0.6 / pxPerM);
-  ctx.stroke();
-  // windshield + rear window + roof
+  const paint = (x0: number, x1: number, wf: number) => {
+    const g = ctx.createLinearGradient(0, -W / 2, 0, W / 2);
+    g.addColorStop(0, col.dark); g.addColorStop(0.18, col.body); g.addColorStop(0.5, col.light);
+    g.addColorStop(0.82, col.body); g.addColorStop(1, col.dark);
+    ctx.fillStyle = g;
+    rr(ctx, x0, -W * wf / 2, x1 - x0, W * wf, W * B.r);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(40,25,15,0.35)';
+    ctx.lineWidth = Math.max(0.04, 0.6 / pxPerM);
+    ctx.stroke();
+  };
+  if (B.cargo) {
+    // cab in paint colour, white cargo box behind
+    paint(L * 0.2, L / 2, 0.9);
+    ctx.fillStyle = '#ECE9E2';
+    rr(ctx, -L / 2, -W / 2, L * 0.69, W, W * 0.06);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(40,35,30,0.35)';
+    ctx.lineWidth = Math.max(0.05, 0.6 / pxPerM);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(40,35,30,0.12)';
+    for (let i = 1; i < 7; i++) {
+      const x = -L / 2 + (L * 0.69 * i) / 7;
+      ctx.beginPath(); ctx.moveTo(x, -W / 2 + 0.1); ctx.lineTo(x, W / 2 - 0.1); ctx.stroke();
+    }
+  } else paint(-L / 2, L / 2, 0.92);
+  // glass
   ctx.fillStyle = '#2C3442';
   ctx.beginPath();
-  ctx.moveTo(L * 0.27, -W * 0.36); ctx.lineTo(L * 0.27, W * 0.36);
-  ctx.lineTo(L * 0.09, W * 0.33); ctx.lineTo(L * 0.09, -W * 0.33); ctx.closePath();
+  ctx.moveTo(L * B.ws[0], -W * 0.36); ctx.lineTo(L * B.ws[0], W * 0.36);
+  ctx.lineTo(L * B.ws[1], W * 0.33); ctx.lineTo(L * B.ws[1], -W * 0.33); ctx.closePath();
   ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(-L * 0.36, -W * 0.33); ctx.lineTo(-L * 0.36, W * 0.33);
-  ctx.lineTo(-L * 0.24, W * 0.31); ctx.lineTo(-L * 0.24, -W * 0.31); ctx.closePath();
-  ctx.fill();
-  // glass sheen
+  if (!B.cargo) {
+    ctx.beginPath();
+    ctx.moveTo(L * B.rw[1], -W * 0.33); ctx.lineTo(L * B.rw[1], W * 0.33);
+    ctx.lineTo(L * B.rw[0], W * 0.31); ctx.lineTo(L * B.rw[0], -W * 0.31); ctx.closePath();
+    ctx.fill();
+  }
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   ctx.beginPath();
-  ctx.moveTo(L * 0.25, -W * 0.3); ctx.lineTo(L * 0.25, -W * 0.05); ctx.lineTo(L * 0.12, -W * 0.2); ctx.lineTo(L * 0.12, -W * 0.3);
+  ctx.moveTo(L * (B.ws[0] - 0.02), -W * 0.3); ctx.lineTo(L * (B.ws[0] - 0.02), -W * 0.05);
+  ctx.lineTo(L * (B.ws[1] + 0.03), -W * 0.2); ctx.lineTo(L * (B.ws[1] + 0.03), -W * 0.3);
   ctx.closePath(); ctx.fill();
   // roof
   const rg = ctx.createLinearGradient(0, -W * 0.3, 0, W * 0.3);
   rg.addColorStop(0, col.body); rg.addColorStop(0.5, col.light); rg.addColorStop(1, col.body);
   ctx.fillStyle = rg;
-  rr(ctx, -L * 0.24, -W * 0.31, L * 0.33, W * 0.62, W * 0.12);
+  rr(ctx, L * B.roof[0], -W * 0.31, L * (B.roof[1] - B.roof[0]), W * 0.62, W * 0.12);
   ctx.fill();
+  if (B.rack) {
+    ctx.strokeStyle = 'rgba(30,30,30,0.45)';
+    ctx.lineWidth = Math.max(0.05, W * 0.035);
+    for (const sy of [-0.24, 0.24]) { ctx.beginPath(); ctx.moveTo(L * B.roof[0] + 0.15, W * sy); ctx.lineTo(L * B.roof[1] - 0.15, W * sy); ctx.stroke(); }
+  }
+  if (B.stripes) {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    for (const sy of [-0.13, 0.05]) ctx.fillRect(-L / 2, W * sy, L, W * 0.08);
+  }
+  if (B.scoop) {
+    ctx.fillStyle = col.dark;
+    rr(ctx, L * 0.26, -W * 0.12, L * 0.12, W * 0.24, W * 0.05); ctx.fill();
+  }
+  if (B.vents) {
+    ctx.fillStyle = 'rgba(20,20,25,0.55)';
+    for (const sy of [-1, 1]) { rr(ctx, -L * 0.08, sy * W * 0.4 - W * 0.04, L * 0.1, W * 0.08, 0.04); ctx.fill(); }
+  }
   // mirrors
   ctx.fillStyle = col.dark;
-  rr(ctx, L * 0.12, -W * 0.56, L * 0.05, W * 0.1, 0.05); ctx.fill();
-  rr(ctx, L * 0.12, W * 0.46, L * 0.05, W * 0.1, 0.05); ctx.fill();
+  const mx = B.cargo ? L * 0.37 : L * (B.ws[1] + 0.03);
+  rr(ctx, mx, -W * 0.56, L * 0.05, W * 0.1, 0.05); ctx.fill();
+  rr(ctx, mx, W * 0.46, L * 0.05, W * 0.1, 0.05); ctx.fill();
   // headlights
   ctx.fillStyle = '#FFF7DC';
   rr(ctx, L * 0.455, -W * 0.38, L * 0.04, W * 0.2, 0.06); ctx.fill();
@@ -271,8 +324,9 @@ export function drawPin(ctx: CanvasRenderingContext2D, x: number, y: number, col
  * Redraw overpass pieces (world space, same widths/colours as the tiles) on top
  * of the car so it visibly drives underneath bridges.
  */
-export function drawOverpasses(ctx: CanvasRenderingContext2D, items: { c: Chunk; k: number }[], scale: number) {
+export function drawOverpasses(ctx: CanvasRenderingContext2D, items: { c: Chunk; k: number }[], scale: number, th: Theme = THEME_MAP) {
   if (!items.length) return;
+  const RAIL = th.rail, ROAD = th.road;
   const byLevel = new Map<number, { c: Chunk; k: number }[]>();
   for (const it of items) {
     const l = it.c.ll[it.k];
@@ -297,7 +351,7 @@ export function drawOverpasses(ctx: CanvasRenderingContext2D, items: { c: Chunk;
         if (kind >= LK.rail) {
           const st = kind === LK.rail ? RAIL.rail : kind === LK.metro ? RAIL.metro : RAIL.tram;
           const w = Math.max(st.w * scale, st.minPx);
-          if (pass === 0) { ctx.strokeStyle = '#D9D2C7'; ctx.lineWidth = (w + 3) / scale; ctx.lineCap = 'round'; ctx.stroke(p); }
+          if (pass === 0) { ctx.strokeStyle = th.railBridge; ctx.lineWidth = (w + 3) / scale; ctx.lineCap = 'round'; ctx.stroke(p); }
           else { ctx.strokeStyle = st.color; ctx.lineWidth = w / scale; ctx.stroke(p); }
           continue;
         }
@@ -307,11 +361,11 @@ export function drawOverpasses(ctx: CanvasRenderingContext2D, items: { c: Chunk;
         if (pass === 0) {
           if (!st.casing) continue;
           ctx.save();
-          ctx.shadowColor = 'rgba(60,40,20,0.35)';
+          ctx.shadowColor = th.bridgeShadow;
           ctx.shadowBlur = 6;
           ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 3;
-          ctx.strokeStyle = shade(st.casing, -0.12);
-          ctx.lineWidth = (w + 2 * Math.max(st.casingPx, 0.45 * scale) + 0.8) / scale;
+          ctx.strokeStyle = th.bridgeCasing(st.casing);
+          ctx.lineWidth = (w + 2 * Math.max(st.casingPx, th.curbM * scale) + 0.8) / scale;
           ctx.stroke(p);
           ctx.restore();
         } else {

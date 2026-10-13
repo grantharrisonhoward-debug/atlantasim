@@ -43,6 +43,8 @@ npm run data:build   # projects, clips to I-285, chunks, builds labels/search/ro
 | R | Reset car onto the nearest road, facing legal traffic direction |
 | M | Full-screen map (search, destinations, routing) |
 | C | Toggle north-up / car-up camera |
+| V | Next vehicle |
+| T | Toggle map style (cartographic / realistic) |
 | F3 or ` | Debug overlay (fps, tile stats, road under car) |
 | Esc | Pause and settings |
 
@@ -64,6 +66,28 @@ A gamepad also works: left stick to steer, RT/LT for throttle/brake, A/B for the
 - There are one-way chevrons, BeltLine trails highlighted in green, and a fogged area outside the Perimeter.
 - The map data comes in three LODs: 1 km full-detail chunks, 4 km simplified chunks, and 16 km overview chunks. Tiles are cached in an LRU and requested by priority from the view centre outward. Coarser tiles fill in while sharper ones render, so there are no loading screens while driving.
 - Labels are laid out live every frame, so they stay crisp and upright in car-up mode. Street names curve along the road, with collision avoidance and priority by road class. There are also neighborhood names, landmark pins, park and water names, and Interstate, US, and GA route shields.
+
+**Vehicles.** Six vehicles share the physics model with different parameters. You pick one on the title screen or in the pause menu, or press V to cycle in game.
+
+| Vehicle | Character |
+| --- | --- |
+| Sedan | balanced |
+| City Hatch | slow, nimble, very forgiving |
+| Sports Coupe | fastest, grippy but twitchy at the limit |
+| Muscle Car | huge power, loose rear end, easy to drift or spin |
+| SUV | heavy, understeers, very stable |
+| Box Truck | slow and wide, almost impossible to spin |
+
+They differ in mass, front and rear grip, stability-assist strength, steering speed, and top-speed multiplier. Each has its own sprite.
+
+**Map styles.** *Cartographic* is the default map look. *Realistic* (T) is a simplified aerial look, drawn entirely from the same vector data with no satellite imagery:
+
+- asphalt roads with concrete curbs, white lane dashes, yellow center lines, and white crosswalks;
+- textured lawns and dense tree canopy;
+- shingle roofs on houses, flat light roofs on larger buildings, with sun-side bevels and stronger shadows;
+- deep-blue water and gravel rail beds.
+
+Labels switch to white with dark halos.
 
 **Projection.** A Transverse Mercator projection is centred on Atlanta (WGS84). It is conformal, with under 0.001 % scale error inside I-285, so road angles and shapes are not distorted. The HUD inverts it to show live latitude and longitude.
 
