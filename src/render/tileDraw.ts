@@ -112,7 +112,7 @@ export function drawTile(ctx: Ctx, shadow: Ctx, chunks: Chunk[], job: TileJob, r
   for (const c of chunks) {
     for (let k = 0; k < c.nLines; k++) {
       const kind = c.lk[k];
-      if (kind < LK.stream || !hit(c.lbox, k)) continue;
+      if (kind < LK.stream || kind === LK.crosswalk || !hit(c.lbox, k)) continue;
       hasWater = true;
       const p = kind === LK.stream ? water.stream : kind === LK.river ? water.river : kind === LK.ditch ? water.ditch : water.edge;
       lineTo(p, c.pts, c.lo[k], c.lc[k]);
@@ -131,20 +131,35 @@ export function drawTile(ctx: Ctx, shadow: Ctx, chunks: Chunk[], job: TileJob, r
   if (treeAreas.length) drawTrees(ctx, treeAreas, x0, y0, inv, bx0, by0, bx1, by1, cssMpp);
 
   // ---------------------------------------------------------------- roads --
-  interface Group { paths: Map<string, Path2D>; rails: Map<string, Path2D>; oneway: { c: Chunk; k: number; key: string }[] }
+  interface Group {
+    paths: Map<string, Path2D>; rails: Map<string, Path2D>; oneway: { c: Chunk; k: number; key: string }[];
+    center: Path2D | null; lanes: Path2D | null; cross: Path2D | null;
+  }
   const levels = new Map<number, Group>();
   const group = (l: number) => {
     let g = levels.get(l);
-    if (!g) levels.set(l, (g = { paths: new Map(), rails: new Map(), oneway: [] }));
+    if (!g) levels.set(l, (g = { paths: new Map(), rails: new Map(), oneway: [], center: null, lanes: null, cross: null }));
     return g;
   };
+  const markings = cssMpp < 0.45;
   const beltName = (c: Chunk, k: number) => c.ln[k] >= 0 && /beltline/i.test(c.names[c.ln[k]]);
   for (const c of chunks) {
     for (let k = 0; k < c.nLines; k++) {
       const kind = c.lk[k];
-      if (kind > LK.tram || !hit(c.lbox, k)) continue;
+      if ((kind > LK.tram && kind !== LK.crosswalk) || !hit(c.lbox, k)) continue;
       const lvl = c.ll[k] < 0 ? -1 : c.ll[k];
       const fl = c.lf[k];
+      if (kind === LK.crosswalk) {
+        if (!markings || lvl < 0) continue;
+        const g = group(lvl);
+        lineTo(g.cross ?? (g.cross = new Path2D()), c.pts, c.lo[k], c.lc[k]);
+        continue;
+      }
+      if (markings && !(fl & LF.link) && lvl >= 0) {
+        const g = group(lvl);
+        if (kind <= LK.trunk) lineTo(g.lanes ?? (g.lanes = new Path2D()), c.pts, c.lo[k], c.lc[k]);
+        else if (kind <= LK.tertiary && !(fl & (LF.oneway | LF.onewayRev))) lineTo(g.center ?? (g.center = new Path2D()), c.pts, c.lo[k], c.lc[k]);
+      }
       if (kind >= LK.rail) {
         const key = kind === LK.rail ? 'rail' : kind === LK.metro ? 'metro' : 'tram';
         if (cssMpp > (RAIL as any)[key].maxMpp) continue;
@@ -162,7 +177,7 @@ export function drawTile(ctx: Ctx, shadow: Ctx, chunks: Chunk[], job: TileJob, r
       let p = g.paths.get(key);
       if (!p) g.paths.set(key, (p = new Path2D()));
       lineTo(p, c.pts, c.lo[k], c.lc[k]);
-      if ((fl & (LF.oneway | LF.onewayRev)) && cssMpp < 0.42 && kind <= LK.service) g.oneway.push({ c, k, key });
+      if ((fl & (LF.oneway | LF.onewayRev)) && cssMpp < 0.42 && kind > LK.trunk && kind <= LK.service) g.oneway.push({ c, k, key });
     }
   }
 
@@ -217,6 +232,30 @@ export function drawTile(ctx: Ctx, shadow: Ctx, chunks: Chunk[], job: TileJob, r
       ctx.setLineDash([]);
     }
     ctx.lineCap = 'round';
+    // road markings (close zoom only)
+    if (g.center) {
+      ctx.strokeStyle = 'rgba(232,196,110,0.85)';
+      ctx.lineWidth = Math.max(0.6 * pxs, 0.22 * inv);
+      ctx.stroke(g.center);
+    }
+    if (g.lanes) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = Math.max(0.6 * pxs, 0.18 * inv);
+      ctx.lineCap = 'butt';
+      ctx.setLineDash([3 * inv, 6 * inv]);
+      ctx.stroke(g.lanes);
+      ctx.setLineDash([]);
+      ctx.lineCap = 'round';
+    }
+    if (g.cross) {
+      ctx.strokeStyle = 'rgba(196,184,166,0.7)';
+      ctx.lineWidth = 3.0 * inv;
+      ctx.lineCap = 'butt';
+      ctx.setLineDash([0.55 * inv, 0.6 * inv]);
+      ctx.stroke(g.cross);
+      ctx.setLineDash([]);
+      ctx.lineCap = 'round';
+    }
     // rail
     for (const [key, p] of g.rails) {
       const st = (RAIL as any)[key];
@@ -281,7 +320,7 @@ export function drawTile(ctx: Ctx, shadow: Ctx, chunks: Chunk[], job: TileJob, r
 
 // --------------------------------------------------------------------------
 
-function shade(hex: string, amt: number): string {
+export function shade(hex: string, amt: number): string {
   const n = parseInt(hex.slice(1), 16);
   let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
   const f = (v: number) => Math.max(0, Math.min(255, Math.round(amt < 0 ? v * (1 + amt) : v + (255 - v) * amt)));

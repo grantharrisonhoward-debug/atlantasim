@@ -139,10 +139,10 @@ export class LabelLayer {
     };
 
     // ---- neighbourhoods (priority at mid/far zoom)
-    const hoodWin: Record<number, [number, number]> = { 0: [0.035, 1.7], 1: [0.13, 2.4], 2: [0.42, 3.2] };
+    const hoodWin: Record<number, [number, number]> = { 0: [0.016, 1.7], 1: [0.13, 2.4], 2: [0.42, 3.2] };
     const drawHoods = () => {
       for (const h of this.global.hoods) {
-        const win = h.s === 'locality' ? [0.03, 1.4] : h.s === 'microhood' ? [3.6, 20] : hoodWin[h.r] ?? hoodWin[2];
+        const win = h.s === 'locality' ? [0.016, 1.4] : h.s === 'microhood' ? [3.6, 20] : hoodWin[h.r] ?? hoodWin[2];
         const a = fade(s, win[0], win[1]);
         if (a <= 0.02) continue;
         const p = toS(h.x, h.y);

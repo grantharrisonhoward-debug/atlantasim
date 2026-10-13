@@ -4,7 +4,7 @@
 import type { Car } from './car';
 
 export const ZOOM_MIN = 0.06;  // CSS px per metre
-export const ZOOM_MAX = 14;
+export const ZOOM_MAX = 9;
 
 export class Camera {
   x = 0; y = 0;

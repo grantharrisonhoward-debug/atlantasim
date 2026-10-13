@@ -20,7 +20,7 @@ export const BASE: string = typeof document !== 'undefined'
   : import.meta.env.BASE_URL;
 
 export async function loadManifest(): Promise<Manifest> {
-  const r = await fetch(`${BASE}world/manifest.json`);
+  const r = await fetch(`${BASE}world/manifest.json`, { cache: 'no-cache' });
   if (!r.ok) throw new Error('Could not load world/manifest.json — run `npm run data:build` first.');
   return r.json();
 }

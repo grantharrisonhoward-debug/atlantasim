@@ -2,6 +2,7 @@
 // which road am I on, what surface is under me, building collisions.
 
 import { decodeChunk, chunkUrl, type Chunk } from '../world/chunk';
+import { cachedArrayBuffer } from '../world/fetchCache';
 import { LK, PK, isDrivable } from '../world/codes';
 import { BASE, distToRing, pointInRing, type Manifest } from '../world/manifest';
 import { ROAD, roadStyleKey } from '../render/style';
@@ -55,8 +56,7 @@ export class WorldQuery {
     const k = `${i}_${j}`;
     if (this.cache.has(k) || this.loading.has(k) || !this.have.has(k)) return;
     this.loading.add(k);
-    fetch(chunkUrl(BASE, 0, i, j))
-      .then((r) => r.arrayBuffer())
+    cachedArrayBuffer(chunkUrl(BASE, 0, i, j))
       .then((b) => this.cache.set(k, decodeChunk(b, k)))
       .catch((e) => console.warn('chunk', k, e))
       .finally(() => this.loading.delete(k));
@@ -103,7 +103,8 @@ export class WorldQuery {
           let score = Math.max(0, d - hw);
           const name = c.ln[k] >= 0 ? c.names[c.ln[k]] : null;
           if (prefer) {
-            if (prefer.level !== c.ll[k]) score += 6;
+            // switching level is only easy when it's the same street (bridge approach)
+            if (prefer.level !== c.ll[k]) score += prefer.name && prefer.name === name ? 1 : 6;
             if (prefer.name && prefer.name === name) score -= 2;
           }
           if (heading !== undefined) score += (1 - Math.abs((dx * hx + dy * hy) / L)) * 3;
@@ -168,6 +169,20 @@ export class WorldQuery {
     if (!cnt) return null;
     const L = Math.hypot(tx, ty) || 1;
     return { dx: tx, dy: ty, nx: tx / L, ny: ty / L };
+  }
+
+  /** road/rail pieces above `level` near (x,y) — redrawn over the car so it passes under overpasses */
+  linesAbove(x: number, y: number, r: number, level: number): { c: Chunk; k: number }[] {
+    const out: { c: Chunk; k: number }[] = [];
+    for (const c of this.near(x, y, r)) {
+      const b = c.lbox;
+      for (let k = 0; k < c.nLines; k++) {
+        if (c.ll[k] <= level || c.lk[k] > LK.tram || c.lk[k] === LK.sidewalk) continue;
+        if (b[k * 4] > x + r || b[k * 4 + 2] < x - r || b[k * 4 + 1] > y + r || b[k * 4 + 3] < y - r) continue;
+        out.push({ c, k });
+      }
+    }
+    return out;
   }
 
   get loadedChunks() { return this.cache.size; }

@@ -4,7 +4,7 @@ export const LK = {
   motorway: 0, trunk: 1, primary: 2, secondary: 3, tertiary: 4, residential: 5,
   minor: 6, service: 7, serviceMinor: 8, roadUnknown: 9, pedestrian: 10,
   path: 11, sidewalk: 12, rail: 13, metro: 14, tram: 15, stream: 16, river: 17,
-  ditch: 18, waterEdge: 19,
+  ditch: 18, waterEdge: 19, crosswalk: 20,
 } as const;
 
 export const LF = {

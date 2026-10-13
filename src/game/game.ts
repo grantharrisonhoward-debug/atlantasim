@@ -3,7 +3,7 @@
 import { loadManifest, Projection, pointInRing, distToRing, type Manifest } from '../world/manifest';
 import { TileCache, type View } from '../render/tileCache';
 import { LabelLayer, abbreviate } from '../render/labels';
-import { drawCar, drawPin, drawPuck, drawRoute, Skids, Smoke, CAR_COLORS } from '../render/carDraw';
+import { drawCar, drawPin, drawPuck, drawRoute, drawOverpasses, Skids, Smoke, CAR_COLORS } from '../render/carDraw';
 import { Car, type SurfaceParams } from './car';
 import { Camera } from './camera';
 import { Input } from './input';
@@ -15,6 +15,7 @@ import { RouteFollower } from '../nav/follow';
 import { Search } from '../nav/search';
 import { Hud, fmtDist, fmtDur, iconSvg } from '../ui/hud';
 import { FullMap } from '../ui/fullmap';
+import { setCacheVersion, pruneOldCaches } from '../world/fetchCache';
 
 const MPS_TO_MPH = 2.2369363;
 
@@ -61,11 +62,17 @@ export class Game {
   private paused = false;
   private rerouting = false;
   private hintT = 14;
+  private debug = false;
+  private fpsN = 0;
+  private fpsT = 0;
+  private fps = 0;
 
   async start(status: (s: string) => void) {
     status('Loading map manifest…');
     this.manifest = await loadManifest();
     const m = this.manifest;
+    setCacheVersion(m.generated);
+    pruneOldCaches();
     this.proj = new Projection(m.projection.lat0, m.projection.lon0);
     this.region = new Float32Array((m as any).region ?? m.perimeter);
     this.cache = new TileCache(m, this.renderDpr());
@@ -292,6 +299,10 @@ export class Game {
     if (this.map.open) return;
     if (inp.hit('r')) this.resetCar();
     if (inp.hit('c')) this.toggleCamera();
+    if (inp.hit('F3') || inp.hit('`')) {
+      this.debug = !this.debug;
+      document.getElementById('debug')!.classList.toggle('hidden', !this.debug);
+    }
     if (inp.wheel && !this.paused) this.cam.zoomBy(Math.exp(-inp.wheel * 0.0016));
     if (inp.hit('=') || inp.hit('+')) this.cam.zoomBy(1.25);
     if (inp.hit('-')) this.cam.zoomBy(0.8);
@@ -403,6 +414,8 @@ export class Game {
       TileCache.applyView(ctx, v);
       this.smoke.draw(ctx);
       drawCar(ctx, car, this.settings.color, v.rot, v.scale);
+      const lvl = Math.max(0, this.road && this.road.dist < this.road.halfWidth + 4 ? this.road.level : 0);
+      drawOverpasses(ctx, this.wq.linesAbove(car.x, car.y, car.length + 6, lvl), v.scale);
     } else {
       ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
       drawPuck(ctx, carS[0], carS[1], car.heading + v.rot);
@@ -450,6 +463,23 @@ export class Game {
 
   private updateHud(rdt: number) {
     const car = this.car;
+    this.fpsN++; this.fpsT += rdt;
+    if (this.fpsT >= 0.5) { this.fps = this.fpsN / this.fpsT; this.fpsN = 0; this.fpsT = 0; }
+    if (this.debug && this.hudT <= 0) {
+      const st = this.cache.stats();
+      const r = this.road;
+      document.getElementById('debug')!.textContent = [
+        `fps        ${this.fps.toFixed(0)}`,
+        `tiles      ${st.tiles} cached · ${st.inflight} rendering · ${st.queued} queued`,
+        `raster     ${st.ms.toFixed(1)} ms/tile avg · ${st.workers} workers`,
+        `zoom       ${this.cam.scale.toFixed(2)} px/m · tile z${this.cache.zoomFor(this.mainView())}`,
+        `chunks     ${this.wq.loadedChunks} L0 near car`,
+        `pos        ${car.x.toFixed(1)}, ${car.y.toFixed(1)} m`,
+        `road       ${r ? `${r.name ?? '—'} k${r.kind} lvl${r.level} d${r.dist.toFixed(1)}m` : '—'}`,
+        `surface    ${this.surface} · top ${(this.topSpeed * MPS_TO_MPH).toFixed(0)} mph`,
+        `slip       ${car.vLat.toFixed(2)} m/s`,
+      ].join('\n');
+    }
     const mph = car.speed * MPS_TO_MPH;
     this.hud.setSpeed(mph, car.vLong < -0.3 ? 'R' : car.speed < 0.3 ? 'P' : 'D');
     this.hud.setCompass(this.cam.rot);

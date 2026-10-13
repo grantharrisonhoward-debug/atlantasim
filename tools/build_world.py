@@ -45,7 +45,7 @@ LODS = {
 LK = dict(motorway=0, trunk=1, primary=2, secondary=3, tertiary=4, residential=5,
           minor=6, service=7, service_minor=8, road_unknown=9, pedestrian=10,
           path=11, sidewalk=12, rail=13, metro=14, tram=15, stream=16, river=17,
-          ditch=18, water_edge=19)
+          ditch=18, water_edge=19, crosswalk=20)
 LF = dict(link=1, bridge=2, tunnel=4, oneway=8, oneway_rev=16, construction=32, private=64)
 PK = dict(residential=0, commercial=1, retail=2, industrial=3, park=4, grass=5, forest=6,
           shrub=7, garden=8, cemetery=9, golf=10, fairway=11, green=12, sand=13, pitch=14,
@@ -381,8 +381,10 @@ def process_roads(store, seg_t, seg_g, region, conn_pos):
             flagsets = cols["rail_flags"][k]
         else:
             rc = ROAD_CLASS.get(cl, "road_unknown")
-            if cl == "footway" and sc in ("sidewalk", "crosswalk"):
+            if cl == "footway" and sc == "sidewalk":
                 rc = "sidewalk"
+            if cl == "footway" and sc == "crosswalk":
+                rc = "crosswalk"
             if cl == "cycleway" and sc == "cycle_crossing":
                 rc = "sidewalk"
             if cl == "service" and sc in ("driveway", "parking_aisle", "alley"):
@@ -448,7 +450,7 @@ def process_roads(store, seg_t, seg_g, region, conn_pos):
             if kind <= LK["minor"] or kind == LK["rail"] or kind == LK["metro"]:
                 store.add_line(2, piece.simplify(4.0), kind, fl, lvl, name, refs)
         # labels
-        if name and st == "road" and kind not in (LK["sidewalk"],):
+        if name and st == "road" and kind not in (LK["sidewalk"], LK["crosswalk"]):
             rank = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 5, 7: 6, 8: 7, 9: 6, 10: 6, 11: 6}.get(kind, 7)
             if base_flags & LF["link"]:
                 rank = 7

@@ -46,6 +46,7 @@ export class Car {
   vLong = 0; vLat = 0;
   braking = false; reversing = false; sliding = 0; handbrake = false;
   impact = 0;
+  private rearGrip = 1;
 
   constructor(h: Handling = DEFAULT_CAR) { this.h = h; }
 
@@ -67,8 +68,12 @@ export class Car {
     const spd = Math.abs(vLong);
 
     // --- steering (rate-limited in real time so it feels the same at any game speed)
-    const maxSteer = h.maxSteer / (1 + Math.pow(spd / h.steerFalloff, 1.25));
-    const target = inp.steer * maxSteer * (inp.handbrake ? 1.25 : 1);
+    // lock shrinks with speed and never asks for much more than the tyres can give
+    // (L·μg/v² is the steady-state steer angle at the grip limit)
+    const Lw = h.wheelBase * (0.5 + 0.5 * this.scale);
+    const gripLimit = (Lw * h.mu * G * surf.grip * 1.6) / Math.max(1, spd * spd);
+    const maxSteer = Math.min(h.maxSteer / (1 + Math.pow(spd / h.steerFalloff, 1.25)), Math.max(0.02, gripLimit));
+    const target = inp.steer * (inp.handbrake ? Math.min(h.maxSteer, maxSteer * 2.2) : maxSteer);
     const rate = (Math.abs(target) < Math.abs(this.steerAngle) ? 7 : 4.2) * steerDt;
     this.steerAngle += Math.max(-rate, Math.min(rate, target - this.steerAngle));
 
@@ -99,24 +104,53 @@ export class Car {
     else if (this.braking && Math.sign(nv) !== Math.sign(vLong)) vLong = 0;
     else vLong = nv;
 
-    // --- lateral grip
-    const grip = surf.grip * (inp.handbrake ? 0.32 : 1);
-    const maxLat = h.mu * G * grip;
-    const want = -vLat;
-    const lim = maxLat * dt * (inp.handbrake ? 1 : 1.0);
-    const applied = Math.max(-lim, Math.min(lim, want));
-    vLat += applied;
+    // --- lateral & yaw: dynamic bicycle model (front/rear slip angles with
+    // saturating tyre forces). Handbrake cuts rear grip → oversteer / drift.
+    const L = h.wheelBase * (0.5 + 0.5 * this.scale);
+    const la = L * 0.46, lb = L * 0.54;            // CG → front / rear axle
+    const m = 1450, Iz = 0.21 * m * L * L;
+    const mu = h.mu * surf.grip;
+    const Nf = (m * G * lb) / L, Nr = (m * G * la) / L;
+    const hb = inp.handbrake && spd > 2;
+    // traction circle: hard throttle/brake eats into rear lateral grip a little
+    const longUse = Math.min(0.6, Math.abs(a) / (mu * G + 1e-6) * 0.5);
+    // rear grip falls quickly when the handbrake is pulled and returns smoothly
+    // (avoids a violent snap-back when it is released mid-slide)
+    const rgT = hb ? 0.36 : 1;
+    this.rearGrip += (rgT - this.rearGrip) * (1 - Math.exp(-steerDt * (hb ? 14 : 2.6)));
+    const Ff = mu * Nf, Fr = mu * Nr * this.rearGrip * (1 - longUse * 0.5);
+    const Cf = 11 * Nf, Cr = 12.5 * Nr;
+    let r = this.omega;
+    const delta = this.steerAngle;
+    const kinYaw = (vLong * Math.tan(delta)) / L;
+    // blend: kinematic at walking pace and in reverse, dynamic above
+    const vTot = Math.hypot(vLong, vLat);
+    const w = vLong < -0.5 ? 0 : Math.max(0, Math.min(1, (vTot - 1.5) / 4));
+    if (w > 0) {
+      const uu = Math.max(vLong, 0.5);
+      const af = Math.atan2(vLat + la * r, uu) - delta;
+      const ar = Math.atan2(vLat - lb * r, uu);
+      const Fyf = -Ff * Math.tanh((Cf * af) / Ff);
+      const Fyr = -Fr * Math.tanh((Cr * ar) / Fr);
+      const cd = Math.cos(delta);
+      vLong += vLat * r * dt;
+      vLat += ((Fyf * cd + Fyr) / m - vLong * r) * dt;
+      r += ((la * Fyf * cd - lb * Fyr) / Iz) * dt;
+      // arcade stability assist: without the handbrake, an extreme slide is
+      // gently yawed back toward the direction of travel (keyboard-friendly)
+      if (!hb) {
+        const beta = Math.atan2(vLat, uu);
+        const ex = Math.abs(beta) - 0.3;
+        if (ex > 0) r += Math.sign(beta) * ex * 4 * dt;
+      }
+    }
+    if (w < 1) {
+      r = r * w + kinYaw * (1 - w);
+      vLat *= w + (1 - w) * Math.exp(-dt * 25);
+    }
+    if (spd < 0.05) r *= 0.5;
+    this.omega = r;
     this.sliding = Math.abs(vLat);
-
-    // --- yaw
-    const kin = (vLong * Math.tan(this.steerAngle)) / h.wheelBase;
-    let yawTarget = kin;
-    if (inp.handbrake && spd > 4) yawTarget = kin * 1.7 + inp.steer * 0.25 * Math.sign(vLong);
-    // countersteer while sliding lets the player hold a drift
-    if (!inp.handbrake && Math.abs(vLat) > 2.5) yawTarget += -vLat * 0.05;
-    const yawRate = inp.handbrake ? 5 : 9 * Math.min(1, surf.grip + 0.2);
-    this.omega += (yawTarget - this.omega) * Math.min(1, yawRate * dt);
-    if (spd < 0.05) this.omega *= 0.5;
 
     this.vLong = vLong;
     this.vLat = vLat;

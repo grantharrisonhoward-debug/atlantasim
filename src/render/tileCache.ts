@@ -17,7 +17,7 @@ export interface View {
 interface Tile { key: string; z: number; tx: number; ty: number; bmp: ImageBitmap | null; used: number }
 
 export const ZMIN = -6;
-export const ZMAX = 3;
+export const ZMAX = 4;
 
 export class TileCache {
   private workers: { w: Worker; busy: boolean; job: string | null }[] = [];
@@ -30,6 +30,7 @@ export class TileCache {
   pxScale: number;
   maxTiles = 260;
   onTile: (() => void) | null = null;
+  renderMs = 0; // moving average of worker raster time per tile
 
   constructor(manifest: Manifest, pxScale: number) {
     this.pxScale = pxScale;
@@ -39,7 +40,7 @@ export class TileCache {
     const region = (manifest as any).region ?? manifest.perimeter;
     for (let i = 0; i < n; i++) {
       const w = new Worker(new URL('./tileWorker.ts', import.meta.url), { type: 'module' });
-      w.postMessage({ type: 'init', base: BASE, lods, region });
+      w.postMessage({ type: 'init', base: BASE, lods, region, version: manifest.generated });
       const slot = { w, busy: false, job: null as string | null };
       w.onmessage = (ev) => this.onMessage(slot, ev.data);
       w.onerror = (e) => { console.error('tile worker error', e); slot.busy = false; };
@@ -56,6 +57,7 @@ export class TileCache {
 
   private onMessage(slot: { busy: boolean; job: string | null }, msg: any) {
     if (msg.type !== 'tile') return;
+    if (msg.ms) this.renderMs = this.renderMs * 0.9 + msg.ms * 0.1;
     const key = this.idToKey.get(msg.id);
     this.idToKey.delete(msg.id);
     slot.busy = false;
@@ -215,6 +217,6 @@ export class TileCache {
   }
 
   stats() {
-    return { tiles: this.tiles.size, inflight: this.inflight.size, queued: this.wanted.size };
+    return { tiles: this.tiles.size, inflight: this.inflight.size, queued: this.wanted.size, ms: this.renderMs, workers: this.workers.length };
   }
 }

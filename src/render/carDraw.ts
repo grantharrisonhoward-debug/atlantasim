@@ -2,6 +2,10 @@
 
 import type { Car } from '../game/car';
 import type { Route } from '../nav/graph';
+import type { Chunk } from '../world/chunk';
+import { LF, LK } from '../world/codes';
+import { RAIL, ROAD, roadStyleKey } from './style';
+import { shade } from './tileDraw';
 
 export const CAR_COLORS: Record<string, { body: string; dark: string; light: string }> = {
   peach: { body: '#E8775A', dark: '#B9533B', light: '#F6A68D' },
@@ -261,4 +265,62 @@ export function drawPin(ctx: CanvasRenderingContext2D, x: number, y: number, col
   ctx.fillStyle = '#FFFFFF';
   ctx.fill();
   ctx.restore();
+}
+
+/**
+ * Redraw overpass pieces (world space, same widths/colours as the tiles) on top
+ * of the car so it visibly drives underneath bridges.
+ */
+export function drawOverpasses(ctx: CanvasRenderingContext2D, items: { c: Chunk; k: number }[], scale: number) {
+  if (!items.length) return;
+  const byLevel = new Map<number, { c: Chunk; k: number }[]>();
+  for (const it of items) {
+    const l = it.c.ll[it.k];
+    if (!byLevel.has(l)) byLevel.set(l, []);
+    byLevel.get(l)!.push(it);
+  }
+  const path = (c: Chunk, k: number) => {
+    const p = new Path2D();
+    const o = c.lo[k], n = c.lc[k];
+    p.moveTo(c.pts[o * 2], c.pts[o * 2 + 1]);
+    for (let i = 1; i < n; i++) p.lineTo(c.pts[(o + i) * 2], c.pts[(o + i) * 2 + 1]);
+    return p;
+  };
+  ctx.lineJoin = 'round';
+  for (const l of [...byLevel.keys()].sort((a, b) => a - b)) {
+    const list = byLevel.get(l)!;
+    // shadow + casing pass, then fill pass (mirrors the tile renderer)
+    for (const pass of [0, 1]) {
+      for (const { c, k } of list) {
+        const kind = c.lk[k];
+        const p = path(c, k);
+        if (kind >= LK.rail) {
+          const st = kind === LK.rail ? RAIL.rail : kind === LK.metro ? RAIL.metro : RAIL.tram;
+          const w = Math.max(st.w * scale, st.minPx);
+          if (pass === 0) { ctx.strokeStyle = '#D9D2C7'; ctx.lineWidth = (w + 3) / scale; ctx.lineCap = 'round'; ctx.stroke(p); }
+          else { ctx.strokeStyle = st.color; ctx.lineWidth = w / scale; ctx.stroke(p); }
+          continue;
+        }
+        const st = ROAD[roadStyleKey(kind, (c.lf[k] & LF.link) !== 0, false)];
+        const w = Math.max(st.w * scale, st.minPx);
+        ctx.lineCap = 'butt';
+        if (pass === 0) {
+          if (!st.casing) continue;
+          ctx.save();
+          ctx.shadowColor = 'rgba(60,40,20,0.35)';
+          ctx.shadowBlur = 6;
+          ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 3;
+          ctx.strokeStyle = shade(st.casing, -0.12);
+          ctx.lineWidth = (w + 2 * Math.max(st.casingPx, 0.45 * scale) + 0.8) / scale;
+          ctx.stroke(p);
+          ctx.restore();
+        } else {
+          ctx.strokeStyle = st.fill;
+          ctx.lineWidth = w / scale;
+          ctx.stroke(p);
+        }
+      }
+    }
+  }
+  ctx.lineCap = 'round';
 }
