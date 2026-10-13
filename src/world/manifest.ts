@@ -5,7 +5,7 @@ export interface Manifest {
   generated: string;
   source: string;
   projection: { proj: 'tmerc'; lat0: number; lon0: number; k: number; ellps: string; yFlip: boolean };
-  lods: Record<string, { size: number; unit: number; chunks: [number, number][] }>;
+  lods: Record<string, { size: number; unit: number; pack: number; chunks: [number, number][] }>;
   labelChunks: [number, number][];
   labelChunkSize: number;
   perimeter: number[];

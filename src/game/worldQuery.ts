@@ -1,8 +1,7 @@
 // Main-thread spatial queries against full-detail (L0) chunks around the car:
 // which road am I on, what surface is under me, building collisions.
 
-import { decodeChunk, chunkUrl, type Chunk } from '../world/chunk';
-import { cachedArrayBuffer } from '../world/fetchCache';
+import { decodeChunk, fetchChunk, type Chunk } from '../world/chunk';
 import { LK, PK, isDrivable } from '../world/codes';
 import { BASE, distToRing, pointInRing, type Manifest } from '../world/manifest';
 import { ROAD, roadStyleKey } from '../render/style';
@@ -26,11 +25,13 @@ export type Surface = 'road' | 'paved' | 'offroad';
 
 export class WorldQuery {
   private size: number;
+  private pack: number;
   private have: Set<string>;
   private cache = new Map<string, Chunk>();
   private loading = new Set<string>();
   constructor(m: Manifest) {
     this.size = m.lods['0'].size;
+    this.pack = m.lods['0'].pack;
     this.have = new Set(m.lods['0'].chunks.map(([i, j]) => `${i}_${j}`));
   }
 
@@ -56,8 +57,8 @@ export class WorldQuery {
     const k = `${i}_${j}`;
     if (this.cache.has(k) || this.loading.has(k) || !this.have.has(k)) return;
     this.loading.add(k);
-    cachedArrayBuffer(chunkUrl(BASE, 0, i, j))
-      .then((b) => this.cache.set(k, decodeChunk(b, k)))
+    fetchChunk(BASE, 0, i, j, this.pack)
+      .then((b) => { if (b) this.cache.set(k, decodeChunk(b, k)); })
       .catch((e) => console.warn('chunk', k, e))
       .finally(() => this.loading.delete(k));
   }

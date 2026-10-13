@@ -5,6 +5,7 @@
 import type { Manifest } from '../world/manifest';
 import { BASE } from '../world/manifest';
 import { GUTTER, TILE_PX, tileWorldSize, type TileJob } from './tileDraw';
+import { createTileService } from './tileService';
 
 export interface View {
   cx: number; cy: number;   // world centre (m)
@@ -14,13 +15,16 @@ export interface View {
   dpr: number;
 }
 
+interface Port { postMessage(msg: any): void }
+interface Slot { w: Port; busy: boolean; job: string | null; ok: boolean }
+
 interface Tile { key: string; z: number; tx: number; ty: number; bmp: ImageBitmap | null; used: number }
 
 export const ZMIN = -6;
 export const ZMAX = 4;
 
 export class TileCache {
-  private workers: { w: Worker; busy: boolean; job: string | null }[] = [];
+  private workers: Slot[] = [];
   private tiles = new Map<string, Tile>();
   private inflight = new Set<string>();
   private wanted = new Map<string, { z: number; tx: number; ty: number; pri: number }>();
@@ -35,17 +39,39 @@ export class TileCache {
   constructor(manifest: Manifest, pxScale: number) {
     this.pxScale = pxScale;
     const n = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
-    const lods: Record<string, { size: number; chunks: [number, number][] }> = {};
-    for (const [k, v] of Object.entries(manifest.lods)) lods[k] = { size: v.size, chunks: v.chunks };
+    const lods: Record<string, { size: number; pack: number; chunks: [number, number][] }> = {};
+    for (const [k, v] of Object.entries(manifest.lods)) lods[k] = { size: v.size, pack: v.pack, chunks: v.chunks };
     const region = (manifest as any).region ?? manifest.perimeter;
+    const init = { type: 'init', base: BASE, lods, region, version: manifest.generated, binSuffix: (manifest as any).binSuffix };
     for (let i = 0; i < n; i++) {
-      const w = new Worker(new URL('./tileWorker.ts', import.meta.url), { type: 'module' });
-      w.postMessage({ type: 'init', base: BASE, lods, region, version: manifest.generated });
-      const slot = { w, busy: false, job: null as string | null };
-      w.onmessage = (ev) => this.onMessage(slot, ev.data);
-      w.onerror = (e) => { console.error('tile worker error', e); slot.busy = false; };
+      const slot: Slot = { w: null as any, busy: false, job: null, ok: false };
+      try {
+        const w = new Worker(new URL('./tileWorker.ts', import.meta.url), { type: 'module' });
+        w.onmessage = (ev) => { slot.ok = true; this.onMessage(slot, ev.data); };
+        w.onerror = (e) => {
+          console.warn('tile worker failed; rendering on the main thread instead', e);
+          if (!slot.ok) this.useLocal(slot, init);
+          else slot.busy = false;
+        };
+        w.postMessage(init);
+        slot.w = w;
+      } catch (e) {
+        console.warn('module workers unavailable; rendering on the main thread', e);
+        this.useLocal(slot, init);
+      }
       this.workers.push(slot);
     }
+  }
+
+  /** host the tile service on the main thread (fallback when workers can't start) */
+  private useLocal(slot: Slot, init: any) {
+    const key = slot.job;
+    const handle = createTileService((m) => setTimeout(() => this.onMessage(slot, m), 0));
+    handle(init);
+    slot.ok = true;
+    slot.w = { postMessage: (m: any) => setTimeout(() => handle(m), 0) };
+    // re-queue whatever the failed worker was holding
+    if (key) { this.inflight.delete(key); slot.busy = false; slot.job = null; }
   }
 
   setPxScale(s: number) {
@@ -55,7 +81,7 @@ export class TileCache {
     this.tiles.clear();
   }
 
-  private onMessage(slot: { busy: boolean; job: string | null }, msg: any) {
+  private onMessage(slot: Slot, msg: any) {
     if (msg.type !== 'tile') return;
     if (msg.ms) this.renderMs = this.renderMs * 0.9 + msg.ms * 0.1;
     const key = this.idToKey.get(msg.id);

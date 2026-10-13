@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "data:fetch": "python3 tools/fetch_overture.py",
-    "data:build": "python3 tools/build_world.py"
+    "data:build": "python3 tools/build_world.py",
+    "build:artifact": "npm run build && python3 tools/make_artifact.py"
   },
   "devDependencies": {
     "tsx": "^4.23.15",

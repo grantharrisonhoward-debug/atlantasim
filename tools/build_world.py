@@ -34,6 +34,9 @@ LAT0, LON0 = 33.7756, -84.3900
 PROJ = f"+proj=tmerc +lat_0={LAT0} +lon_0={LON0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs"
 TF = Transformer.from_crs("EPSG:4326", PROJ, always_xy=True)
 
+# chunks per pack side (pack files bundle PACK×PACK chunks)
+PACK = {0: 4, 1: 2, 2: 4}
+
 LODS = {
     0: dict(size=1024, unit=0.1),
     1: dict(size=4096, unit=0.25),
@@ -238,6 +241,7 @@ class Store:
     def write(self):
         index = {0: [], 1: [], 2: []}
         total = collections.Counter()
+        packs = collections.defaultdict(list)
         for (lod, i, j), ch in sorted(self.chunks.items()):
             s, unit = LODS[lod]["size"], LODS[lod]["unit"]
             ox, oy = (i + 0.5) * s, (j + 0.5) * s
@@ -282,18 +286,21 @@ class Store:
             ]
             names = [k for k, _ in sorted(ch["names"].items(), key=lambda kv: kv[1])]
             refs = [k for k, _ in sorted(ch["refs"].items(), key=lambda kv: kv[1])]
-            path = os.path.join(OUT, f"L{lod}", f"{i}_{j}.bin")
-            write_container(path, dict(lod=lod, i=i, j=j, ox=ox, oy=oy, unit=unit, names=names, refs=refs), arrays)
+            data = container_bytes(dict(lod=lod, i=i, j=j, ox=ox, oy=oy, unit=unit, names=names, refs=refs), arrays)
+            P = PACK[lod]
+            packs[(lod, i // P, j // P)].append((f"{i}_{j}", data))
             index[lod].append([i, j])
-            total[lod] += os.path.getsize(path)
+            total[lod] += len(data)
+        for (lod, pi, pj), entries in packs.items():
+            write_pack(os.path.join(OUT, f"L{lod}", f"p{pi}_{pj}.pack"), entries)
         for lod in index:
-            log(f"  L{lod}: {len(index[lod])} chunks, {total[lod]/1e6:.1f} MB")
+            n = sum(1 for k in packs if k[0] == lod)
+            log(f"  L{lod}: {len(index[lod])} chunks in {n} packs, {total[lod]/1e6:.1f} MB")
         return index
 
 
-def write_container(path, header, arrays):
+def container_bytes(header, arrays):
     """[u32 magic 'ATLW'][u32 header length][header json][pad to 8][arrays...]"""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
     offs = {}
     body = bytearray()
     for name, a in arrays:
@@ -305,11 +312,29 @@ def write_container(path, header, arrays):
     hj = json.dumps(header, separators=(",", ":")).encode()
     pad = (8 - (8 + len(hj)) % 8) % 8
     hj += b" " * pad
+    return b"ATLW" + len(hj).to_bytes(4, "little") + hj + bytes(body)
+
+
+def write_container(path, header, arrays):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
-        f.write(b"ATLW")
-        f.write(len(hj).to_bytes(4, "little"))
-        f.write(hj)
-        f.write(body)
+        f.write(container_bytes(header, arrays))
+
+
+def write_pack(path, entries):
+    """Bundle many chunk containers into one file (fewer requests, fewer files):
+    [u32 magic 'ATLP'][u32 index length][index json {"i_j": [offset, length]}][pad to 8][containers, 8-aligned]"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    index, body = {}, bytearray()
+    for key, data in entries:
+        while len(body) % 8:
+            body.append(0)
+        index[key] = [len(body), len(data)]
+        body += data
+    ij = json.dumps(index, separators=(",", ":")).encode()
+    ij += b" " * ((8 - (8 + len(ij)) % 8) % 8)
+    with open(path, "wb") as f:
+        f.write(b"ATLP" + len(ij).to_bytes(4, "little") + ij + bytes(body))
 
 
 # ------------------------------------------------------------ roads --------
@@ -596,10 +621,13 @@ def label_candidates(label_pieces):
         for q in pts:
             search_streets.append((name, rank, q))
     os.makedirs(os.path.join(OUT, "labels"), exist_ok=True)
+    streets = {}
     for (i, j), d in per_chunk.items():
         names = [k for k, _ in sorted(d["names"].items(), key=lambda kv: kv[1])]
-        with open(os.path.join(OUT, "labels", f"L1_{i}_{j}.json"), "w") as f:
-            json.dump(dict(names=names, c=d["c"]), f, separators=(",", ":"))
+        # rank <= 3 already lives in global.json
+        streets[f"{i}_{j}"] = dict(names=names, c=[c for c in d["c"] if c[1] >= 4])
+    with open(os.path.join(OUT, "labels", "streets.json"), "w") as f:
+        json.dump(streets, f, separators=(",", ":"))
     gnames = [k for k, _ in sorted(global_c["names"].items(), key=lambda kv: kv[1])]
     return per_chunk.keys(), dict(names=gnames, c=global_c["c"]), search_streets
 
@@ -1008,6 +1036,9 @@ def find_spawn(seg_t, seg_g):
 
 def main():
     t0 = time.time()
+    import shutil
+    for d in ("L0", "L1", "L2", "labels"):
+        shutil.rmtree(os.path.join(OUT, d), ignore_errors=True)
     os.makedirs(OUT, exist_ok=True)
     seg_t, seg_g = load("segment", ["id", "names", "subtype", "class", "subclass", "road_flags", "rail_flags",
                                     "level_rules", "access_restrictions", "routes", "connectors", "geometry"])
@@ -1049,7 +1080,7 @@ def main():
         generated=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         source="OpenStreetMap contributors via Overture Maps Foundation release 2026-09-23.1 (ODbL / CDLA)",
         projection=dict(proj="tmerc", lat0=LAT0, lon0=LON0, k=1, ellps="WGS84", yFlip=True),
-        lods={str(k): dict(size=v["size"], unit=v["unit"], chunks=index[k]) for k, v in LODS.items()},
+        lods={str(k): dict(size=v["size"], unit=v["unit"], pack=PACK[k], chunks=index[k]) for k, v in LODS.items()},
         labelChunks=sorted([list(k) for k in chunks_with_labels]),
         labelChunkSize=LODS[1]["size"],
         perimeter=pr,

@@ -2,7 +2,7 @@
 // Edges carry their full geometry; one-way restrictions are respected.
 
 import { parseContainer } from '../world/container';
-import { cachedArrayBuffer } from '../world/fetchCache';
+import { cachedArrayBuffer, binSuffix } from '../world/fetchCache';
 import { BASE } from '../world/manifest';
 import { LF, LK } from '../world/codes';
 
@@ -68,7 +68,7 @@ export class RoadGraph {
   private grid = new Map<number, number[]>();
 
   static async load(): Promise<RoadGraph> {
-    const { header, arrays: a } = parseContainer<{ names: string[] }>(await cachedArrayBuffer(`${BASE}world/routing.bin`));
+    const { header, arrays: a } = parseContainer<{ names: string[] }>(await cachedArrayBuffer(`${BASE}world/routing.bin${binSuffix}`));
     const g = new RoadGraph();
     Object.assign(g, {
       nx: a.nx, ny: a.ny, ea: a.ea, eb: a.eb, el: a.el, ec: a.ec, ef: a.ef, en: a.en, go: a.go, gc: a.gc, G: a.G,

@@ -3,3 +3,4 @@ dist/
 data/raw/
 *.tmp
 .DS_Store
+dist-artifact/

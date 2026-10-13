@@ -10,6 +10,10 @@ Drive a little car through every mapped street inside I-285: down Peachtree, ont
 | ![Full map](docs/full-map.png) Full map, clipped to I-285 | ![Route](docs/route.png) Search + route to Ponce City Market |
 | ![Connector](docs/connector-car-up.png) Downtown Connector, car-up camera | |
 
+## Play
+
+**[▶ Play in the browser](https://claude.ai/artifact/Pq8GizzPzzYPZMXqnhW1MP)**: wait for Midtown to load, press **Play**, then drive with W A S D. The link is private until it's shared from the page's Share menu.
+
 ## Quick start
 
 ```bash
@@ -25,7 +29,7 @@ npm run data:fetch   # downloads the Atlanta subset of the OSM-derived Overture 
 npm run data:build   # projects, clips to I-285, chunks, builds labels/search/routing → public/world/
 ```
 
-`npm run build` produces a static site in `dist/` that can be hosted anywhere (no server code, no API keys).
+`npm run build` produces a static site in `dist/` that can be hosted anywhere (no server code, no API keys). `npm run build:artifact` also writes `dist-artifact/`, a version for hosts that only serve standard web file types. Its binary data files get a `.wasm` suffix, and the manifest tells the game to request them that way.
 
 ## Controls
 
@@ -93,7 +97,8 @@ A gamepad also works: left stick to steer, RT/LT for throttle/brake, A/B for the
 ```
 tools/fetch_overture.py     bbox-filtered download of the OSM-derived Overture GeoParquet (S3, no key)
 tools/build_world.py        projection, I-285 clip, LOD chunking (binary), labels, search, routing graph
-public/world/               generated data (manifest.json, L0/L1/L2/*.bin, labels/, routing.bin, search.json)
+public/world/               generated data (manifest.json, L0/L1/L2/*.pack chunk bundles, labels/, routing.bin, search.json)
+tools/make_artifact.py      packages dist/ as a single hostable page (npm run build:artifact)
 src/world/                  binary container reader, chunk decoder, projection & geometry helpers, feature codes
 src/render/tileDraw.ts      the cartography (runs in workers)
 src/render/tileWorker.ts    worker: chunk cache + tile rasteriser

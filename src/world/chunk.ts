@@ -3,6 +3,7 @@
 // use them directly.
 
 import { parseContainer } from './container';
+import { cachedArrayBuffer, binSuffix } from './fetchCache';
 
 export interface ChunkHeader {
   lod: number; i: number; j: number; ox: number; oy: number; unit: number;
@@ -76,6 +77,35 @@ export function decodeChunk(buf: ArrayBuffer, key: string): Chunk {
   };
 }
 
-export function chunkUrl(base: string, lod: number, i: number, j: number) {
-  return `${base}world/L${lod}/${i}_${j}.bin`;
+
+// --- packs: chunks are bundled PACK×PACK per file ([u32 'ATLP'][u32 len][index json][data]) ---
+
+interface Pack { index: Record<string, [number, number]>; data: ArrayBuffer; base: number }
+const packs = new Map<string, Promise<Pack>>();
+
+function loadPack(url: string): Promise<Pack> {
+  let p = packs.get(url);
+  if (!p) {
+    p = cachedArrayBuffer(url).then((buf) => {
+      const dv = new DataView(buf);
+      if (dv.getUint32(0, true) !== 0x504c5441) throw new Error('bad pack ' + url); // 'ATLP'
+      const n = dv.getUint32(4, true);
+      const index = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, n)));
+      return { index, data: buf, base: 8 + n };
+    });
+    p.catch(() => packs.delete(url));
+    packs.set(url, p);
+    // keep memory bounded: forget the oldest pack promises (decoded chunks are cached by callers)
+    if (packs.size > 24) packs.delete(packs.keys().next().value!);
+  }
+  return p;
+}
+
+/** fetch the raw container bytes of one chunk (via its pack) */
+export async function fetchChunk(base: string, lod: number, i: number, j: number, pack: number): Promise<ArrayBuffer | null> {
+  const pi = Math.floor(i / pack), pj = Math.floor(j / pack);
+  const pk = await loadPack(`${base}world/L${lod}/p${pi}_${pj}.pack${binSuffix}`);
+  const e = pk.index[`${i}_${j}`];
+  if (!e) return null;
+  return pk.data.slice(pk.base + e[0], pk.base + e[0] + e[1]);
 }

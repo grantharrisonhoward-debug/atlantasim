@@ -15,7 +15,7 @@ import { RouteFollower } from '../nav/follow';
 import { Search } from '../nav/search';
 import { Hud, fmtDist, fmtDur, iconSvg } from '../ui/hud';
 import { FullMap } from '../ui/fullmap';
-import { setCacheVersion, pruneOldCaches } from '../world/fetchCache';
+import { setCacheVersion, setBinSuffix, pruneOldCaches } from '../world/fetchCache';
 
 const MPS_TO_MPH = 2.2369363;
 
@@ -72,12 +72,14 @@ export class Game {
     this.manifest = await loadManifest();
     const m = this.manifest;
     setCacheVersion(m.generated);
+    setBinSuffix((m as any).binSuffix);
     pruneOldCaches();
     this.proj = new Projection(m.projection.lat0, m.projection.lon0);
     this.region = new Float32Array((m as any).region ?? m.perimeter);
     this.cache = new TileCache(m, this.renderDpr());
     this.wq = new WorldQuery(m);
     this.input = new Input(this.canvas);
+    this.input.enabled = false; // until Play is pressed
     status('Loading labels…');
     await this.labels.load(m.labelChunks, m.labelChunkSize);
     this.hoods = this.labels.global.hoods;
@@ -139,6 +141,13 @@ export class Game {
       scale: this.cam.scale, rot: this.cam.rot,
       w: window.innerWidth, h: window.innerHeight, dpr: this.renderDpr(),
     };
+  }
+
+  /** called when the player presses Play */
+  begin() {
+    this.input.enabled = true;
+    this.hintT = 14;
+    (document.getElementById('hint') as HTMLElement).style.opacity = '1';
   }
 
   hoodName(x: number, y: number) { return neighborhoodAt(x, y, this.hoods, this.hoodAreas).hood; }
@@ -293,6 +302,7 @@ export class Game {
 
   private handleKeys() {
     const inp = this.input;
+    if (!inp.enabled) return; // title screen
     if (inp.hit('m')) this.map.toggle();
     if (inp.hit('Escape')) {
       if (this.map.open) this.map.hide();

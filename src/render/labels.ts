@@ -94,14 +94,18 @@ export class LabelLayer {
     this.chunkSize = chunkSize;
   }
 
+  private streetsFile: Promise<void> | null = null;
   private ensureChunk(i: number, j: number) {
     const k = `${i}_${j}`;
     if (this.chunkStreets.has(k) || !this.labelChunks.has(k)) return;
-    this.chunkStreets.set(k, 'loading');
-    fetch(`${BASE}world/labels/L1_${k}.json`).then((r) => r.json()).then((d) => {
-      this.chunkStreets.set(k, (d.c as [number, number, number[]][]).filter((c) => c[1] >= 4)
-        .map(([ni, rank, pts]) => ({ name: d.names[ni], rank, pts: new Float32Array(pts) })));
-    }).catch(() => this.chunkStreets.delete(k));
+    // all minor-street candidates ship in one file; fetch it once, then split by chunk
+    if (!this.streetsFile) {
+      this.streetsFile = fetch(`${BASE}world/labels/streets.json`).then((r) => r.json()).then((all: Record<string, { names: string[]; c: [number, number, number[]][] }>) => {
+        for (const [key, d] of Object.entries(all)) {
+          this.chunkStreets.set(key, d.c.map(([ni, rank, pts]) => ({ name: d.names[ni], rank, pts: new Float32Array(pts) })));
+        }
+      }).catch(() => { this.streetsFile = null; });
+    }
   }
 
   private measure(ctx: CanvasRenderingContext2D, font: string, s: string) {

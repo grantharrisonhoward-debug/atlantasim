@@ -430,7 +430,7 @@ function drawBuildings(ctx: Ctx, shadow: Ctx, chunks: Chunk[], x0: number, y0: n
   const tones = BLD_TONES.map(() => new Path2D());
   const tall = new Path2D();
   const sh = new Path2D();
-  const doShadow = cssMpp < 7;
+  const doShadow = cssMpp < 2.6;
   // sun from the north-west: shadows fall to the south-east
   const SX = 0.55, SY = 0.83;
   let any = false;

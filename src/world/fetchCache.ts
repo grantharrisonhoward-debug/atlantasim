@@ -2,6 +2,9 @@
 // workers). Keyed by the world build timestamp so a rebuild invalidates it.
 
 let cacheName = 'atlantasim-world';
+/** extra suffix for binary data files (hosts that only serve web types publish them as .wasm) */
+export let binSuffix = '';
+export function setBinSuffix(s: string | undefined) { binSuffix = s ?? ''; }
 
 export function setCacheVersion(v: string) {
   cacheName = `atlantasim-world-${v}`;

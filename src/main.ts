@@ -19,7 +19,19 @@ async function boot() {
     const game = new Game();
     (window as any).game = game;
     await game.start(status);
+    // ready: wait for the player to press Play (also gives the page keyboard focus)
+    status('Midtown is ready — Peachtree St & 10th St');
+    const btn = document.getElementById('play') as HTMLButtonElement;
+    const keys = document.getElementById('play-keys')!;
+    btn.hidden = false;
+    keys.hidden = false;
+    btn.focus();
+    await new Promise<void>((resolve) => {
+      btn.addEventListener('click', () => resolve(), { once: true });
+    });
+    window.focus();
     document.getElementById('loading')!.classList.add('done');
+    game.begin();
   } catch (e) {
     console.error(e);
     status(String((e as Error).message ?? e));
