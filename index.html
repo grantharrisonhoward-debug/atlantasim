@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#F1EDE4" />
+    <title>Atlanta ITP — Drive</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23F1EDE4'/%3E%3Cpath d='M32 10 46 50 32 42 18 50Z' fill='%23E8775A'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <div id="hud" class="hidden">
+      <div id="street" class="glass">
+        <div id="street-main"><span id="street-shield"></span><span id="street-name">—</span></div>
+        <div id="street-sub">—</div>
+      </div>
+
+      <div id="nav" class="glass hidden">
+        <div id="nav-top">
+          <div id="nav-icon"></div>
+          <div>
+            <div id="nav-dist">—</div>
+            <div id="nav-text">—</div>
+          </div>
+        </div>
+        <div id="nav-foot"><span id="nav-eta">—</span><button id="nav-end" title="End navigation">End</button></div>
+      </div>
+
+      <div id="controls">
+        <button id="btn-compass" class="round glass" title="Toggle north-up / car-up (C)"><svg viewBox="0 0 40 40"><g id="compass-needle"><path d="M20 6 25 20H15Z" fill="#E8775A"/><path d="M20 34 15 20h10Z" fill="#B7AC9E"/></g><text x="20" y="4.6" text-anchor="middle" font-size="5" fill="#8A7E70" font-weight="700">N</text></svg></button>
+        <button id="btn-map" class="round glass" title="Full map (M)"><svg viewBox="0 0 24 24"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5V4l-6 2.5L9 4Zm0 0v13m6-10.5v13" fill="none" stroke="#5A4E40" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
+        <button id="btn-menu" class="round glass" title="Pause / settings (Esc)"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14" stroke="#5A4E40" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+      </div>
+
+      <div id="minimap-wrap" class="glass">
+        <canvas id="minimap"></canvas>
+        <div id="minimap-n">N</div>
+      </div>
+
+      <div id="speedo" class="glass">
+        <svg viewBox="0 0 120 120" id="gauge">
+          <defs>
+            <linearGradient id="gg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#F2B48C"/><stop offset="1" stop-color="#E05F45"/></linearGradient>
+          </defs>
+          <path id="gauge-track" d="" fill="none" stroke="rgba(110,95,80,0.14)" stroke-width="7" stroke-linecap="round"/>
+          <path id="gauge-val" d="" fill="none" stroke="url(#gg)" stroke-width="7" stroke-linecap="round"/>
+        </svg>
+        <div id="speed">0</div>
+        <div id="speed-unit">MPH</div>
+        <div id="gear">D</div>
+      </div>
+
+      <div id="coords"></div>
+      <div id="toast" class="hidden"></div>
+      <div id="hint" class="glass">
+        <b>W A S D</b> drive · <b>Space</b> handbrake · <b>M</b> map · <b>R</b> reset · <b>C</b> camera · <b>Esc</b> menu
+      </div>
+    </div>
+
+    <div id="map-overlay" class="hidden">
+      <canvas id="map-canvas"></canvas>
+      <div id="map-search" class="glass">
+        <div id="search-row">
+          <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#8A7E70" stroke-width="2"/><path d="m15.5 15.5 5 5" stroke="#8A7E70" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="search-input" placeholder="Search streets, places, neighborhoods" autocomplete="off" spellcheck="false" />
+        </div>
+        <div id="search-results"></div>
+      </div>
+      <div id="map-buttons">
+        <button id="map-close" class="round glass" title="Close map (M / Esc)"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" stroke="#5A4E40" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button id="map-zin" class="round glass" title="Zoom in">+</button>
+        <button id="map-zout" class="round glass" title="Zoom out">−</button>
+        <button id="map-me" class="round glass" title="Center on my car"><svg viewBox="0 0 24 24"><path d="M12 3 19 20 12 16 5 20Z" fill="#E8775A"/></svg></button>
+      </div>
+      <div id="route-card" class="glass hidden">
+        <div id="route-title">—</div>
+        <div id="route-meta">—</div>
+        <div id="route-actions"><button id="route-go" class="primary">Drive there</button><button id="route-clear">Clear</button></div>
+      </div>
+      <div id="map-hint">Click anywhere to set a destination · drag to pan · scroll to zoom</div>
+      <div id="attrib">Map data © OpenStreetMap contributors, via Overture Maps Foundation</div>
+    </div>
+
+    <div id="menu" class="hidden">
+      <div id="menu-panel" class="glass">
+        <div id="menu-title">Paused</div>
+        <div class="row"><span>Camera</span><div class="seg" data-key="cameraMode"><button data-v="north">North up</button><button data-v="car">Car up</button></div></div>
+        <div class="row"><span>Game speed</span><div class="seg" data-key="timeScale"><button data-v="1">Real-time</button><button data-v="1.5">Brisk 1.5×</button><button data-v="2">Arcade 2×</button></div></div>
+        <div class="row"><span>Car size</span><div class="seg" data-key="carScale"><button data-v="1">True scale</button><button data-v="1.8">Miniature</button></div></div>
+        <div class="row"><span>Camera look-ahead</span><div class="seg" data-key="lookAhead"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
+        <div class="row"><span>Speed zoom</span><div class="seg" data-key="speedZoom"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
+        <div class="row"><span>Coordinates</span><div class="seg" data-key="showCoords"><button data-v="1">Show</button><button data-v="0">Hide</button></div></div>
+        <div class="row"><span>Render quality</span><div class="seg" data-key="quality"><button data-v="1">Standard</button><button data-v="2">Retina</button></div></div>
+        <div class="row"><span>Paint</span><div id="swatches"></div></div>
+        <div id="menu-keys">
+          <div><kbd>W</kbd><kbd>↑</kbd> accelerate</div><div><kbd>S</kbd><kbd>↓</kbd> brake / reverse</div>
+          <div><kbd>A</kbd><kbd>D</kbd> steer</div><div><kbd>Space</kbd> handbrake</div>
+          <div><kbd>Wheel</kbd> zoom</div><div><kbd>M</kbd> full map</div>
+          <div><kbd>R</kbd> reset car</div><div><kbd>C</kbd> camera mode</div>
+        </div>
+        <button id="menu-resume" class="primary">Resume</button>
+        <div id="menu-about"></div>
+      </div>
+    </div>
+
+    <div id="loading">
+      <div id="loading-inner">
+        <div id="loading-mark"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="none" stroke="#E2D9CB" stroke-width="2"/><path d="M32 12 44 48 32 41 20 48Z" fill="#E8775A"/></svg></div>
+        <div id="loading-title">Atlanta</div>
+        <div id="loading-sub">Inside the Perimeter</div>
+        <div id="loading-status">Loading map…</div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
