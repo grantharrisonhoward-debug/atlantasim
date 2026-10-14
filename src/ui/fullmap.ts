@@ -25,6 +25,13 @@ export class FullMap {
   private found: SearchResult[] = [];
   private destTitle = '';
   private pinches = new Map<number, { x: number; y: number }>();
+  private puckDrag: { id: number; x: number; y: number } | null = null;
+  private pinWorld: { x: number; y: number } | null = null;
+
+  private carScreen(): [number, number] {
+    const v = this.view, car = this.g.car;
+    return [(car.x - v.cx) * v.scale + v.w / 2, (car.y - v.cy) * v.scale + v.h / 2];
+  }
 
   constructor(private g: Game) {
     $('map-close').onclick = () => this.hide();
@@ -32,16 +39,38 @@ export class FullMap {
     $('map-zout').onclick = () => this.zoomAt(1 / 1.8);
     $('map-me').onclick = () => { this.view.cx = g.car.x; this.view.cy = g.car.y; this.targetScale = Math.max(this.targetScale, 0.6); };
     $('route-go').onclick = () => this.hide();
+    $('route-tp').onclick = async () => {
+      const p = this.pinWorld ?? this.g.dest;
+      if (!p) return;
+      g.clearRoute();
+      this.card.classList.add('hidden');
+      if (await g.teleport(p.x, p.y)) this.hide();
+    };
     $('route-clear').onclick = () => { g.clearRoute(); this.card.classList.add('hidden'); };
 
     const c = this.canvas;
     c.addEventListener('pointerdown', (e) => {
       c.setPointerCapture(e.pointerId);
+      // grab your own car to move it somewhere else
+      const cs = this.carScreen();
+      if (this.pinches.size === 0 && Math.hypot(e.clientX - cs[0], e.clientY - cs[1]) < 22) {
+        this.puckDrag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        c.classList.add('dragging');
+        return;
+      }
       this.pinches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.pinches.size === 1) this.drag = { x: e.clientX, y: e.clientY, cx: this.view.cx, cy: this.view.cy, moved: false };
       else this.drag = null;
     });
     c.addEventListener('pointermove', (e) => {
+      if (this.puckDrag) {
+        if (e.pointerId === this.puckDrag.id) { this.puckDrag.x = e.clientX; this.puckDrag.y = e.clientY; }
+        return;
+      }
+      if (!this.drag) {
+        const cs = this.carScreen();
+        c.style.cursor = Math.hypot(e.clientX - cs[0], e.clientY - cs[1]) < 22 ? 'move' : '';
+      }
       const prev = this.pinches.get(e.pointerId);
       if (prev && this.pinches.size === 2) {
         const pts = [...this.pinches.values()];
@@ -61,6 +90,13 @@ export class FullMap {
       this.anchor = null;
     });
     const up = (e: PointerEvent) => {
+      if (this.puckDrag && e.pointerId === this.puckDrag.id) {
+        const [wx, wy] = this.toWorld(this.puckDrag.x, this.puckDrag.y);
+        this.puckDrag = null;
+        c.classList.remove('dragging');
+        g.teleport(wx, wy);
+        return;
+      }
       this.pinches.delete(e.pointerId);
       c.classList.remove('dragging');
       if (this.drag && !this.drag.moved) {
@@ -70,7 +106,7 @@ export class FullMap {
       this.drag = null;
     };
     c.addEventListener('pointerup', up);
-    c.addEventListener('pointercancel', (e) => { this.pinches.delete(e.pointerId); this.drag = null; });
+    c.addEventListener('pointercancel', (e) => { this.pinches.delete(e.pointerId); this.drag = null; this.puckDrag = null; });
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
       const d = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY;
@@ -169,6 +205,7 @@ export class FullMap {
     this.card.classList.remove('hidden');
     $('route-title').textContent = title ?? 'Dropped pin';
     $('route-meta').textContent = 'Finding a route…';
+    this.pinWorld = { x: wx, y: wy };
     const res = await this.g.setDestination(wx, wy);
     if (!res) { $('route-meta').textContent = 'No drivable route found to this point.'; return; }
     this.destTitle = title ?? res.roadName ?? 'Dropped pin';
@@ -185,6 +222,14 @@ export class FullMap {
       this.canvas.width = Math.round(w * dpr); this.canvas.height = Math.round(h * dpr);
     }
     v.w = w; v.h = h; v.dpr = dpr;
+    // carrying the car to an edge scrolls the map
+    if (this.puckDrag) {
+      const m = 60, sp = 700 * dt / v.scale;
+      const px = this.puckDrag.x, py = this.puckDrag.y;
+      if (px < m) v.cx -= sp * (m - px) / m; else if (px > w - m) v.cx += sp * (px - (w - m)) / m;
+      if (py < m) v.cy -= sp * (m - py) / m; else if (py > h - m) v.cy += sp * (py - (h - m)) / m;
+      this.anchor = null;
+    }
     // smooth zoom about the anchor
     const k = 1 - Math.exp(-dt * 12);
     v.scale *= Math.pow(this.targetScale / v.scale, k);
@@ -205,7 +250,17 @@ export class FullMap {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const car = this.g.car;
     const cs = [(car.x - v.cx) * v.scale + w / 2, (car.y - v.cy) * v.scale + h / 2];
-    drawPuck(ctx as any, cs[0], cs[1], car.heading, 1.1);
+    if (this.puckDrag) {
+      // ghost at the old spot, lifted puck under the pointer
+      ctx.globalAlpha = 0.35;
+      drawPuck(ctx as any, cs[0], cs[1], car.heading, 1.1);
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(this.puckDrag.x, this.puckDrag.y, 24, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(232,119,90,0.18)';
+      ctx.fill();
+      drawPuck(ctx as any, this.puckDrag.x, this.puckDrag.y - 4, car.heading, 1.35);
+    } else drawPuck(ctx as any, cs[0], cs[1], car.heading, 1.1);
     const dest = this.g.dest;
     if (dest) drawPin(ctx as any, (dest.x - v.cx) * v.scale + w / 2, (dest.y - v.cy) * v.scale + h / 2);
   }

@@ -198,6 +198,9 @@ export class Skids {
   private seg = new Float32Array(this.max * 5);
   private last: ([number, number] | null)[] = [null, null];
 
+  /** break the trail (after a teleport) */
+  reset() { this.last = [null, null]; }
+
   add(car: Car, time: number, active: boolean, strength: number) {
     const fx = Math.cos(car.heading), fy = Math.sin(car.heading);
     const rx = -fy, ry = fx;

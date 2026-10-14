@@ -97,6 +97,7 @@ export class Game {
     this.hud = new Hud();
     this.map = new FullMap(this);
     this.bindUi();
+    this.bindCarDrag();
     this.resize();
     window.addEventListener('resize', () => this.resize());
     // warm up the first screen of tiles before revealing
@@ -336,6 +337,73 @@ export class Game {
     document.getElementById('menu')!.classList.toggle('hidden', !this.paused);
   }
 
+  /**
+   * Move the car to (x, y): it lands on the nearest road within `snap` metres,
+   * facing a legal direction (or stays exactly there if no road is that close).
+   */
+  async teleport(x: number, y: number, snap = 120, quiet = false): Promise<boolean> {
+    if (!pointInRing(x, y, this.region)) { this.hud.toast('That spot is outside I-285', 1.6); return false; }
+    await this.wq.waitFor(x, y);
+    const heading = this.car.heading;
+    const r = this.wq.nearestRoad(x, y, snap, null, heading);
+    if (r) {
+      let hd = Math.atan2(r.diry, r.dirx);
+      if (r.flags & LF.onewayRev) hd += Math.PI;
+      else if (!(r.flags & LF.oneway) && Math.cos(hd - heading) < 0) hd += Math.PI;
+      this.car.place(r.px, r.py, hd);
+    } else this.car.place(x, y, heading);
+    this.road = null;
+    this.cam.snapTo(this.car);
+    this.skids.reset();
+    if (this.follower.route && this.dest) this.reroute();
+    if (!quiet) {
+      const name = r?.name ? abbreviate(r.name) : this.hoodName(this.car.x, this.car.y) ?? 'new spot';
+      this.hud.toast(`Moved to ${name}`, 1.6);
+    }
+    return true;
+  }
+
+  // drag the car directly in the driving view
+  private carDrag: { id: number } | null = null;
+  private screenToWorld(v: View, sx: number, sy: number): [number, number] {
+    const dx = sx - v.w / 2, dy = sy - v.h / 2;
+    const c = Math.cos(v.rot), s = Math.sin(v.rot);
+    return [v.cx + (dx * c + dy * s) / v.scale, v.cy + (-dx * s + dy * c) / v.scale];
+  }
+  private bindCarDrag() {
+    const cv = this.canvas;
+    const nearCar = (e: PointerEvent) => {
+      const v = this.mainView();
+      const p = this.toScreen(v, this.car.x, this.car.y);
+      const r = Math.max(20, this.car.length * v.scale * 0.6);
+      return Math.hypot(e.clientX - p[0], e.clientY - p[1]) <= r;
+    };
+    cv.addEventListener('pointerdown', (e) => {
+      if (!this.input.enabled || this.paused || this.carDrag || !nearCar(e)) return;
+      this.carDrag = { id: e.pointerId };
+      cv.setPointerCapture(e.pointerId);
+      cv.style.cursor = 'grabbing';
+      this.car.vx = this.car.vy = this.car.omega = 0;
+    });
+    cv.addEventListener('pointermove', (e) => {
+      if (this.carDrag && e.pointerId === this.carDrag.id) {
+        const [wx, wy] = this.screenToWorld(this.mainView(), e.clientX, e.clientY);
+        this.car.x = wx; this.car.y = wy;
+        this.car.vx = this.car.vy = this.car.omega = 0;
+        this.wq.prefetch(wx, wy);
+      } else if (this.input.enabled) cv.style.cursor = nearCar(e) ? 'grab' : '';
+    });
+    const end = (e: PointerEvent) => {
+      if (!this.carDrag || e.pointerId !== this.carDrag.id) return;
+      this.carDrag = null;
+      cv.style.cursor = '';
+      // settle onto a road if one is close, otherwise leave it where it was dropped
+      this.teleport(this.car.x, this.car.y, 25, true);
+    };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+  }
+
   private resetCar() {
     const r = this.wq.nearestRoad(this.car.x, this.car.y, 250, null, this.car.heading);
     if (!r) { this.car.place(this.manifest.spawn.x, this.manifest.spawn.y, this.manifest.spawn.heading); }
@@ -406,6 +474,7 @@ export class Game {
 
   private simulate(rdt: number) {
     const car = this.car;
+    if (this.carDrag) return; // the player is holding the car
     const inp = this.input.read(rdt);
     // road & surface detection (once per frame)
     this.wq.prefetch(car.x, car.y);

@@ -1,0 +1,7 @@
+
+  VITE v6.4.4  ready in 1710 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.0.2.2:5173/
+2:09:52 PM [vite] (client) page reload src/ui/fullmap.ts
+2:10:31 PM [vite] (client) page reload dist-artifact/play.html

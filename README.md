@@ -41,6 +41,7 @@ npm run data:build   # projects, clips to I-285, chunks, builds labels/search/ro
 | Space | Handbrake (drift) |
 | Mouse wheel, + / − | Zoom |
 | R | Reset car onto the nearest road, facing legal traffic direction |
+| Drag the car | Pick the car up with the mouse and drop it somewhere nearby; it settles onto the closest road |
 | M | Full-screen map (search, destinations, routing) |
 | C | Toggle north-up / car-up camera |
 | V | Next vehicle |
@@ -113,6 +114,7 @@ Labels switch to white with dark halos.
 **Navigation.**
 
 - Press M for an interactive map of all of ITP. You can pan, zoom, pinch, and search across about 9.3k street names, 14k real places, 42 landmarks, and about 200 neighborhoods.
+- Drag your car's arrow anywhere on the map to teleport there; it lands on the nearest road, facing the legal direction. The map scrolls when you hold it near an edge. A dropped pin also offers *Teleport here*.
 - Click anywhere or pick a search result to set a destination. A* runs over a 117k-node graph built from OSM connectivity and respects one-way restrictions.
 - While driving, you get the highlighted route, turn-by-turn instructions (turns, exits, merges), distance, ETA, automatic rerouting when you go off-route, and arrival detection.
 

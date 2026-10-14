@@ -94,7 +94,7 @@ button.primary:hover { background: #2b241d; }
 #route-title { font-weight: 650; font-size: 16px; }
 #route-meta { color: var(--ink-soft); font-size: 13px; margin: 3px 0 12px; }
 #route-actions { display: flex; gap: 8px; justify-content: center; }
-#route-clear { border: 1px solid var(--line); background: rgba(255,255,255,0.7); border-radius: 10px; padding: 10px 16px; font-weight: 600; font-size: 14px; }
+#route-clear, #route-tp { border: 1px solid var(--line); background: rgba(255,255,255,0.7); border-radius: 10px; padding: 10px 16px; font-weight: 600; font-size: 14px; }
 #map-hint { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--ink-soft); background: rgba(251,249,245,0.8); padding: 6px 12px; border-radius: 10px; pointer-events: none; }
 #attrib { position: absolute; right: 12px; bottom: 8px; font-size: 10.5px; color: #8f8273; background: rgba(251,249,245,0.75); padding: 3px 8px; border-radius: 6px; }
 
